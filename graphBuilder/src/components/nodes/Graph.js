@@ -8,33 +8,51 @@ const NODE_SIZE = 80;
 const PORT_RADIUS = 6;
 
 export default function GraphApp() {
+  // This variables for: React render, JSX, text, lists
+  // list of nodes for react components: { id, graphId }
   const [nodes, setNodes] = useState([]);
+  // list of links
   const [links, setLinks] = useState([]);
-  
+  // Single source of truth for coordinates. 
+  // Lives on the UI thread, available within worklets (Gesture, useDerivesValue)
+  // nodesStore.value = {
+  //   n_123: { x: 150, y: 100, graphId: 'g_123', isActive: 0 },
+  //   n_456: { x: 300, y: 200, graphId: 'g_123', isActive: 0 },
+  // }
+  // This variables for: UI thread, Skia, gestures, performance
   const nodesStore = useSharedValue({});
+  // Active node, flag of which node is gragging now.
   const activeNodeId = useSharedValue(null);
+  // Regime of connecting (fraw temp line if ture)
   const isConnecting = useSharedValue(false);
+  // const tempLine = useSharedValue({
+  //   x1: 0, y1: 0,
+  //   x2: 0, y2: 0
+  // });
   const tempLine = useSharedValue({ x1: 0, y1: 0, x2: 0, y2: 0 });
+  // Start of offset. To ensure absolute dragging, rather than jumping.
   const startDragOffset = useSharedValue({ x: 0, y: 0 });
-
+  // mergeGraphs: logical union of subgraphs. Called then user has dragged the link to another node.
   const mergeGraphs = (fromId, toId) => {
     setLinks(prev => [...prev, { from: fromId, to: toId }]);
     
-    // Оставляем логику обновления graphId для информации в тексте, 
-    // но теперь это не влияет на перетаскивание
     const targetGraphId = nodesStore.value[toId]?.graphId;
     const sourceGraphId = nodesStore.value[fromId]?.graphId;
+    // Protection against: 1. Undefined, 2. connecting a node to itself, 3. repeated merge
     if (!targetGraphId || !sourceGraphId || targetGraphId === sourceGraphId) return;
 
     nodesStore.modify((val) => {
       'worklet';
       Object.keys(val).forEach(id => {
+        // source.graphId = target.graphId (assign ite ID of the target graph to all nodes of the source graph)
         if (val[id].graphId === sourceGraphId) val[id].graphId = targetGraphId;
       });
       return val;
     });
-
+    // Example for map method: [1, 2, 3].map(x => x * 2)
     setNodes(prev => prev.map(n => 
+      // If n.graphId === sourceGraphId then return a copy of the object, but with a new graphId
+      // otherwise, return the object as is
       n.graphId === sourceGraphId ? { ...n, graphId: targetGraphId } : n
     ));
   };
@@ -42,8 +60,12 @@ export default function GraphApp() {
   const addNewNode = () => {
     const id = `n_${Date.now()}`;
     const graphId = `g_${id}`;
+    // Why .modify, 
+    // 1. Overwrites the object, 2. Breaks references, 3. Heavier for Reanimated
+    // but not nodesStore.value = ...
+    // 1. Mutates the object on the UI thread, 2. Fast, 3. Safe
     nodesStore.modify((value) => {
-      'worklet';
+      'worklet'; // THIS FUNCTION IS EXECUTED ON THE UI THREAD
       value[id] = { x: 150, y: 100, graphId, isActive: 0 };
       return value;
     });
@@ -81,7 +103,6 @@ export default function GraphApp() {
       } else {
         nodesStore.modify((val) => {
           'worklet';
-          // ИСПРАВЛЕНО: Изменяем координаты только ОДНОЙ активной ноды
           const id = activeNodeId.value;
           if (val[id]) {
             val[id].x = startDragOffset.value.x + e.translationX;
@@ -123,6 +144,7 @@ export default function GraphApp() {
       <View style={styles.container}>
         <GestureDetector gesture={pan}>
           <Canvas style={styles.canvas}>
+            {/* array.map((element, index) => { */}
             {links.map((l, i) => (
               <RenderLink key={i} fromId={l.from} toId={l.to} store={nodesStore} />
             ))}
@@ -137,7 +159,7 @@ export default function GraphApp() {
           </Canvas>
         </GestureDetector>
         <TouchableOpacity style={styles.btn} onPress={addNewNode}>
-          <Text style={{color:'#fff', fontWeight:'bold'}}>+ ADD STEP</Text>
+          <Text style={{color:'#fff', fontWeight:'bold'}}>+ ADD NODE</Text>
         </TouchableOpacity>
       </View>
     </GestureHandlerRootView>
@@ -147,16 +169,14 @@ export default function GraphApp() {
 const RenderNode = ({ id, store, font, incoming, outgoing }) => {
   const x = useDerivedValue(() => store.value[id]?.x ?? 0);
   const y = useDerivedValue(() => store.value[id]?.y ?? 0);
-  const active = useDerivedValue(() => store.value[id]?.isActive ?? 0);
   const graphId = useDerivedValue(() => store.value[id]?.graphId ?? '');
+  const strokeColor = useDerivedValue(() => (store.value[id]?.isActive ? "red" : "transparent"));
 
   return (
     <Group>
-      <Rect x={x} y={y} width={NODE_SIZE} height={NODE_SIZE} color="#333" r={12} />
-      <Group>
-        <Paint style="stroke" strokeWidth={2} color="cyan" opacity={active} />
-        <Rect x={x} y={y} width={NODE_SIZE} height={NODE_SIZE} r={12} />
-      </Group>
+      <Rect x={x} y={y} width={NODE_SIZE} height={NODE_SIZE} color="#333" r={12}>
+        <Paint style="stroke" strokeWidth={3} color={strokeColor} />
+      </Rect>
       <Group color="white">
         <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 20)} text={`ID: ${id.slice(-4)}`} />
         <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 35)} text={useDerivedValue(() => `G_ID: ${graphId.value.slice(-4)}`)} />
@@ -188,6 +208,9 @@ const RenderLink = ({ fromId, toId, store }) => {
 const RenderTempLine = ({ tempLine, isConnecting }) => {
   const p1 = useDerivedValue(() => ({ x: tempLine.value.x1, y: tempLine.value.y1 }));
   const p2 = useDerivedValue(() => ({ x: tempLine.value.x2, y: tempLine.value.y2 }));
+  // opacity is the alpha channel, range:
+  // 0 → completely transparent
+  // 1 → completely visible
   const opacity = useDerivedValue(() => isConnecting.value ? 1 : 0);
   return <Line p1={p1} p2={p2} color="white" strokeWidth={2} opacity={opacity} strokeCap="round" />;
 };

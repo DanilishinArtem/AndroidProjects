@@ -1,7 +1,7 @@
 // App.js
 import React from 'react';
 import { StyleSheet, View, SafeAreaView, StatusBar } from 'react-native';
-import GraphApp from './src/components/nodes/engine'; // Импорт вашего файла
+import GraphApp from './src/components/nodes/Graph'; // Импорт вашего файла
 
 export default function App() {
   return (
