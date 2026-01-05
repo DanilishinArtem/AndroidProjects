@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
-import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
-import { Canvas, Rect, Circle, Line, Group, Paint, Text as SkiaText, useFont } from '@shopify/react-native-skia';
+import { View, TouchableOpacity, Text } from 'react-native';
+import { Canvas, useFont } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useSharedValue, runOnJS, useDerivedValue } from 'react-native-reanimated';
+import { useSharedValue, runOnJS } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import {RenderMenu, RenderTempLine, RenderLink, RenderNode, styles} from './RenderFunctions';
 
 const NODE_SIZE = 80;
-const PORT_RADIUS = 6;
 
 export default function GraphApp() {
   // This variables for: React render, JSX, text, lists
@@ -14,6 +14,9 @@ export default function GraphApp() {
   const [nodes, setNodes] = useState([]);
   // list of links
   const [links, setLinks] = useState([]);
+  const menuPos = useSharedValue({ x: 0, y: 0 });
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
   // Single source of truth for coordinates. 
   // Lives on the UI thread, available within worklets (Gesture, useDerivesValue)
   // nodesStore.value = {
@@ -73,6 +76,28 @@ export default function GraphApp() {
     setNodes(prev => [...prev, { id, graphId }]);
   };
 
+  const deleteNode = () => {
+    if (!selectedNodeId) return;
+
+    const idToDelete = selectedNodeId;
+
+    // 1. Удаляем координаты из Skia Store (UI Thread)
+    nodesStore.modify((val) => {
+      'worklet';
+      delete val[idToDelete];
+      return val;
+    });
+
+    // 2. Удаляем из списка нод React
+    setNodes(prev => prev.filter(n => n.id !== idToDelete));
+
+    // 3. Удаляем все связанные линки
+    setLinks(prev => prev.filter(l => l.from !== idToDelete && l.to !== idToDelete));
+
+    setMenuVisible(false);
+    setSelectedNodeId(null);
+  };
+
   const saveGraph = async () => {
     try {
       // Collect data from nodes (structure) and nodesStore (coordinates)
@@ -118,6 +143,25 @@ export default function GraphApp() {
 
   const pan = Gesture.Pan()
     .onBegin((e) => {
+      if (menuVisible) {
+        const mx = menuPos.value.x;
+        const my = menuPos.value.y;
+        
+        // Кнопка YES (координаты относительно меню)
+        if (e.x >= mx + 10 && e.x <= mx + 70 && e.y >= my + 40 && e.y <= my + 70) {
+          runOnJS(deleteNode)();
+          return;
+        }
+        // Кнопка NO
+        if (e.x >= mx + 80 && e.x <= mx + 140 && e.y >= my + 40 && e.y <= my + 70) {
+          runOnJS(setMenuVisible)(false);
+          return;
+        }
+        // Если нажали мимо меню — просто закрываем его
+        runOnJS(setMenuVisible)(false);
+        return;
+      }
+
       const store = nodesStore.value;
       for (const id in store) {
         const n = store[id];
@@ -181,6 +225,21 @@ export default function GraphApp() {
       isConnecting.value = false;
     });
 
+  const longPress = Gesture.LongPress()
+    .onStart((e) => {
+      const store = nodesStore.value;
+      for (const id in store) {
+        const n = store[id];
+        if (e.x >= n.x && e.x <= n.x + NODE_SIZE && e.y >= n.y && e.y <= n.y + NODE_SIZE) {
+          menuPos.value = { x: e.x, y: e.y }; // Запоминаем, где рисовать меню
+          runOnJS(setSelectedNodeId)(id);
+          runOnJS(setMenuVisible)(true);
+          break;
+        }
+      }
+    });
+  
+  const composedGesture = Gesture.Race(pan, longPress);
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 11);
 
   return (
@@ -196,7 +255,7 @@ export default function GraphApp() {
           </TouchableOpacity>
         </View>
 
-        <GestureDetector gesture={pan}>
+        <GestureDetector gesture={composedGesture}>
           <Canvas style={styles.canvas}>
             {/* array.map((element, index) => { */}
             {links.map((l, i) => (
@@ -210,6 +269,12 @@ export default function GraphApp() {
                 outgoing={links.filter(l => l.from === n.id).map(l => l.to.slice(-4)).join(',')}
               />
             ))}
+            <RenderMenu 
+              visible={menuVisible} 
+              pos={menuPos} 
+              font={font} 
+              nodeId={selectedNodeId} 
+            />
           </Canvas>
         </GestureDetector>
         <TouchableOpacity style={styles.btn} onPress={addNewNode}>
@@ -219,61 +284,3 @@ export default function GraphApp() {
     </GestureHandlerRootView>
   );
 }
-
-const RenderNode = ({ id, store, font, incoming, outgoing }) => {
-  const x = useDerivedValue(() => store.value[id]?.x ?? 0);
-  const y = useDerivedValue(() => store.value[id]?.y ?? 0);
-  const graphId = useDerivedValue(() => store.value[id]?.graphId ?? '');
-  const strokeColor = useDerivedValue(() => (store.value[id]?.isActive ? "red" : "transparent"));
-
-  return (
-    <Group>
-      <Rect x={x} y={y} width={NODE_SIZE} height={NODE_SIZE} color="#333" r={12}>
-        <Paint style="stroke" strokeWidth={3} color={strokeColor} />
-      </Rect>
-      <Group color="white">
-        <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 20)} text={`ID: ${id.slice(-4)}`} />
-        <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 35)} text={useDerivedValue(() => `G_ID: ${graphId.value.slice(-4)}`)} />
-        <Group color="#aaa">
-            <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 55)} text={`In: ${incoming || 'none'}`} />
-            <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 70)} text={`Out: ${outgoing || 'none'}`} />
-        </Group>
-      </Group>
-      <Circle cx={useDerivedValue(() => x.value + NODE_SIZE / 2)} cy={y} r={PORT_RADIUS} color="#555">
-        <Paint style="stroke" strokeWidth={1} color="cyan" />
-      </Circle>
-      <Circle cx={useDerivedValue(() => x.value + NODE_SIZE / 2)} cy={useDerivedValue(() => y.value + NODE_SIZE)} r={PORT_RADIUS} color="cyan" />
-    </Group>
-  );
-};
-
-const RenderLink = ({ fromId, toId, store }) => {
-  const p1 = useDerivedValue(() => ({ 
-    x: (store.value[fromId]?.x ?? 0) + NODE_SIZE / 2, 
-    y: (store.value[fromId]?.y ?? 0) + NODE_SIZE 
-  }));
-  const p2 = useDerivedValue(() => ({ 
-    x: (store.value[toId]?.x ?? 0) + NODE_SIZE / 2, 
-    y: (store.value[toId]?.y ?? 0) 
-  }));
-  return <Line p1={p1} p2={p2} color="cyan" strokeWidth={2} />;
-};
-
-const RenderTempLine = ({ tempLine, isConnecting }) => {
-  const p1 = useDerivedValue(() => ({ x: tempLine.value.x1, y: tempLine.value.y1 }));
-  const p2 = useDerivedValue(() => ({ x: tempLine.value.x2, y: tempLine.value.y2 }));
-  // opacity is the alpha channel, range:
-  // 0 → completely transparent
-  // 1 → completely visible
-  const opacity = useDerivedValue(() => isConnecting.value ? 1 : 0);
-  return <Line p1={p1} p2={p2} color="white" strokeWidth={2} opacity={opacity} strokeCap="round" />;
-};
-
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: '#0A0A0A' },
-  canvas: { flex: 1 },
-  btn: { position: 'absolute', bottom: 40, alignSelf: 'center', backgroundColor: '#1A1A1A', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 30, borderWidth: 1, borderColor: '#333' },
-  menu: {flexDirection: 'row', position: 'absolute', top: 50, right: 20, zIndex: 100},
-  menuBtn: {backgroundColor: '#444', padding: 10, marginLeft: 10, borderRadius: 8, borderWidth: 1, borderColor: 'cyan'},
-  menuText: {color: 'cyan', fontWeight: 'bold', fontSize: 12}
-});
