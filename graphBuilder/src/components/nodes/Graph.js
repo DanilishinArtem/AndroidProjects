@@ -3,6 +3,7 @@ import { View, StyleSheet, TouchableOpacity, Text } from 'react-native';
 import { Canvas, Rect, Circle, Line, Group, Paint, Text as SkiaText, useFont } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue, runOnJS, useDerivedValue } from 'react-native-reanimated';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 
 const NODE_SIZE = 80;
 const PORT_RADIUS = 6;
@@ -70,6 +71,49 @@ export default function GraphApp() {
       return value;
     });
     setNodes(prev => [...prev, { id, graphId }]);
+  };
+
+  const saveGraph = async () => {
+    try {
+      // Collect data from nodes (structure) and nodesStore (coordinates)
+      const dataToSave = {
+        nodes: nodes,
+        links: links,
+        // Extract the current coordinates values from SharedValue
+        coords: nodesStore.value 
+      };
+      // Saving to json (local storage)
+      await AsyncStorage.setItem('@my_graph_data', JSON.stringify(dataToSave));
+      alert('Graph is saved!');
+    } catch (e) {
+      console.error("Error saving graph", e);
+    }
+  };
+
+  const loadGraph = async () => {
+    try {
+      const jsonValue = await AsyncStorage.getItem('@my_graph_data');
+      if (jsonValue != null) {
+        const savedData = JSON.parse(jsonValue);
+        
+        // First, we update the heave coordinate storage on the UI thread
+        nodesStore.modify((val) => {
+          'worklet';
+          // Deleting old and writing new datas
+          Object.keys(val).forEach(key => delete val[key]);
+          Object.assign(val, savedData.coords);
+          return val;
+        });
+        
+        // Then we update the React state to render the lists
+        setNodes(savedData.nodes);
+        setLinks(savedData.links);
+        
+        alert('Graph is loaded!');
+      }
+    } catch (e) {
+      console.error("Error loading graph", e);
+    }
   };
 
   const pan = Gesture.Pan()
@@ -142,6 +186,16 @@ export default function GraphApp() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
+
+        <View style={styles.menu}>
+          <TouchableOpacity style={styles.menuBtn} onPress={saveGraph}>
+            <Text style={styles.menuText}>SAVE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuBtn} onPress={loadGraph}>
+            <Text style={styles.menuText}>LOAD</Text>
+          </TouchableOpacity>
+        </View>
+
         <GestureDetector gesture={pan}>
           <Canvas style={styles.canvas}>
             {/* array.map((element, index) => { */}
@@ -218,5 +272,8 @@ const RenderTempLine = ({ tempLine, isConnecting }) => {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   canvas: { flex: 1 },
-  btn: { position: 'absolute', bottom: 40, alignSelf: 'center', backgroundColor: '#1A1A1A', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 30, borderWidth: 1, borderColor: '#333' }
+  btn: { position: 'absolute', bottom: 40, alignSelf: 'center', backgroundColor: '#1A1A1A', paddingHorizontal: 30, paddingVertical: 15, borderRadius: 30, borderWidth: 1, borderColor: '#333' },
+  menu: {flexDirection: 'row', position: 'absolute', top: 50, right: 20, zIndex: 100},
+  menuBtn: {backgroundColor: '#444', padding: 10, marginLeft: 10, borderRadius: 8, borderWidth: 1, borderColor: 'cyan'},
+  menuText: {color: 'cyan', fontWeight: 'bold', fontSize: 12}
 });
