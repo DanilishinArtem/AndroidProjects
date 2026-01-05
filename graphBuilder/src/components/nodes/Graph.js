@@ -14,17 +14,18 @@ export default function GraphApp() {
   const [nodes, setNodes] = useState([]);
   // list of links
   const [links, setLinks] = useState([]);
-  const menuPos = useSharedValue({ x: 0, y: 0 });
   const [menuVisible, setMenuVisible] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
   // Single source of truth for coordinates. 
   // Lives on the UI thread, available within worklets (Gesture, useDerivesValue)
   // nodesStore.value = {
-  //   n_123: { x: 150, y: 100, graphId: 'g_123', isActive: 0 },
-  //   n_456: { x: 300, y: 200, graphId: 'g_123', isActive: 0 },
-  // }
-  // This variables for: UI thread, Skia, gestures, performance
+    //   n_123: { x: 150, y: 100, graphId: 'g_123', isActive: 0 },
+    //   n_456: { x: 300, y: 200, graphId: 'g_123', isActive: 0 },
+    // }
+    // This variables for: UI thread, Skia, gestures, performance
   const nodesStore = useSharedValue({});
+  // Position of the menu
+  const menuPos = useSharedValue({ x: 0, y: 0 });
   // Active node, flag of which node is gragging now.
   const activeNodeId = useSharedValue(null);
   // Regime of connecting (fraw temp line if ture)
@@ -81,17 +82,17 @@ export default function GraphApp() {
 
     const idToDelete = selectedNodeId;
 
-    // 1. Удаляем координаты из Skia Store (UI Thread)
+    // Removing coordinames from the Skia Store, nodesStore (UI Thread)
     nodesStore.modify((val) => {
       'worklet';
       delete val[idToDelete];
       return val;
     });
 
-    // 2. Удаляем из списка нод React
+    // Removing React from the node list
     setNodes(prev => prev.filter(n => n.id !== idToDelete));
 
-    // 3. Удаляем все связанные линки
+    // Remove all related links
     setLinks(prev => prev.filter(l => l.from !== idToDelete && l.to !== idToDelete));
 
     setMenuVisible(false);
@@ -231,14 +232,16 @@ export default function GraphApp() {
       for (const id in store) {
         const n = store[id];
         if (e.x >= n.x && e.x <= n.x + NODE_SIZE && e.y >= n.y && e.y <= n.y + NODE_SIZE) {
-          menuPos.value = { x: e.x, y: e.y }; // Запоминаем, где рисовать меню
+          // Remember where to draw the menu
+          menuPos.value = { x: e.x, y: e.y };
           runOnJS(setSelectedNodeId)(id);
           runOnJS(setMenuVisible)(true);
           break;
         }
       }
     });
-  
+  // Gesture.Simultaneous(pan, longPress): is a parallel operation. 
+  // Both gestures can be active at the same time. We don't need this, so we use Race.
   const composedGesture = Gesture.Race(pan, longPress);
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 11);
 
