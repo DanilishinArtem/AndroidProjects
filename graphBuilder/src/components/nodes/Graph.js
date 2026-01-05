@@ -2,10 +2,10 @@ import React, { useState } from 'react';
 import { View, TouchableOpacity, Text } from 'react-native';
 import { Canvas, useFont } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useSharedValue, runOnJS } from 'react-native-reanimated';
+import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {RenderMenu, RenderTempLine, RenderLink, RenderNode, styles} from './RenderFunctions';
-
+import { runOnJS } from 'react-native-worklets';
 const NODE_SIZE = 80;
 
 export default function GraphApp() {
@@ -81,11 +81,6 @@ export default function GraphApp() {
     if (!selectedNodeId) return;
 
     const idToDelete = selectedNodeId;
-    
-    // Removing React from the node list
-    setNodes(prev => prev.filter(n => n.id !== idToDelete));
-    // Remove all related links
-    setLinks(prev => prev.filter(l => l.from !== idToDelete && l.to !== idToDelete));
 
     // Removing coordinames from the Skia Store, nodesStore (UI Thread)
     nodesStore.modify((val) => {
@@ -93,6 +88,12 @@ export default function GraphApp() {
       delete val[idToDelete];
       return val;
     });
+
+    // Removing React from the node list
+    setNodes(prev => prev.filter(n => n.id !== idToDelete));
+
+    // Remove all related links
+    setLinks(prev => prev.filter(l => l.from !== idToDelete && l.to !== idToDelete));
 
     setMenuVisible(false);
     setSelectedNodeId(null);

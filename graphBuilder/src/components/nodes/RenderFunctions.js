@@ -1,3 +1,4 @@
+
 import React, { memo } from 'react';
 import { Rect, Circle, Line, Group, Paint, Shadow, Text as SkiaText} from '@shopify/react-native-skia';
 import { useDerivedValue } from 'react-native-reanimated';
@@ -61,7 +62,7 @@ export const RenderNode = ({ id, store, font, incoming, outgoing }) => {
     store.value[id]?.isActive ? 'red' : 'transparent'
   );
   return (
-    <Group color="black">
+    <Group>
       <Rect x={x} y={y} width={NODE_SIZE} height={NODE_SIZE} color="#333" r={12}>
         <Paint style="stroke" strokeWidth={3} color={strokeColor} />
       </Rect>
@@ -82,23 +83,26 @@ export const RenderNode = ({ id, store, font, incoming, outgoing }) => {
 };
 
 export const RenderLink = ({ fromId, toId, store }) => {
-  const from = store.value[fromId];
-  const to = store.value[toId];
-
-  // if from or to is undefined — line is not rendered
-  if (!from || !to) return null;
-
-  const p1 = useDerivedValue(() => ({ 
-    x: from.x + NODE_SIZE / 2, 
-    y: from.y + NODE_SIZE 
+  const p1 = useDerivedValue(() => ({
+    x: (store.value[fromId]?.x ?? 0) + NODE_SIZE / 2,
+    y: (store.value[fromId]?.y ?? 0) + NODE_SIZE
   }));
-
-  const p2 = useDerivedValue(() => ({ 
-    x: to.x + NODE_SIZE / 2, 
-    y: to.y 
+  const p2 = useDerivedValue(() => ({
+    x: (store.value[toId]?.x ?? 0) + NODE_SIZE / 2,
+    y: (store.value[toId]?.y ?? 0)
   }));
-
-  return <Line p1={p1} p2={p2} color="cyan" strokeWidth={2} />;
+  const opacity = useDerivedValue(() => 
+    (store.value[fromId] && store.value[toId]) ? 1 : 0
+  );
+  return (
+    <Line 
+      p1={p1}
+      p2={p2} 
+      opacity={opacity}
+      color="cyan" 
+      strokeWidth={2} 
+    />
+  );
 };
 
 export const RenderTempLine = ({ tempLine, isConnecting }) => {
