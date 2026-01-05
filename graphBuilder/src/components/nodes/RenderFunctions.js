@@ -5,6 +5,7 @@ import { StyleSheet} from 'react-native';
 
 const NODE_SIZE = 80;
 const PORT_RADIUS = 6;
+const OFF = -10000;
 
 export const RenderMenu = ({ visible, pos, font, nodeId }) => {
   const transform = useDerivedValue(() => [
@@ -45,13 +46,22 @@ export const RenderMenu = ({ visible, pos, font, nodeId }) => {
 };
 
 export const RenderNode = ({ id, store, font, incoming, outgoing }) => {
-  const x = useDerivedValue(() => store.value[id]?.x ?? 0);
-  const y = useDerivedValue(() => store.value[id]?.y ?? 0);
-  const graphId = useDerivedValue(() => store.value[id]?.graphId ?? '');
-  const strokeColor = useDerivedValue(() => (store.value[id]?.isActive ? "red" : "transparent"));
+  const x = useDerivedValue(() => {
+    const n = store.value[id];
+    return n ? n.x : OFF;
+  });
 
+  const y = useDerivedValue(() => {
+    const n = store.value[id];
+    return n ? n.y : OFF;
+  });
+
+  const graphId = useDerivedValue(() => store.value[id]?.graphId ?? '');
+  const strokeColor = useDerivedValue(() =>
+    store.value[id]?.isActive ? 'red' : 'transparent'
+  );
   return (
-    <Group>
+    <Group color="black">
       <Rect x={x} y={y} width={NODE_SIZE} height={NODE_SIZE} color="#333" r={12}>
         <Paint style="stroke" strokeWidth={3} color={strokeColor} />
       </Rect>
@@ -72,14 +82,22 @@ export const RenderNode = ({ id, store, font, incoming, outgoing }) => {
 };
 
 export const RenderLink = ({ fromId, toId, store }) => {
+  const from = store.value[fromId];
+  const to = store.value[toId];
+
+  // if from or to is undefined — line is not rendered
+  if (!from || !to) return null;
+
   const p1 = useDerivedValue(() => ({ 
-    x: (store.value[fromId]?.x ?? 0) + NODE_SIZE / 2, 
-    y: (store.value[fromId]?.y ?? 0) + NODE_SIZE 
+    x: from.x + NODE_SIZE / 2, 
+    y: from.y + NODE_SIZE 
   }));
+
   const p2 = useDerivedValue(() => ({ 
-    x: (store.value[toId]?.x ?? 0) + NODE_SIZE / 2, 
-    y: (store.value[toId]?.y ?? 0) 
+    x: to.x + NODE_SIZE / 2, 
+    y: to.y 
   }));
+
   return <Line p1={p1} p2={p2} color="cyan" strokeWidth={2} />;
 };
 

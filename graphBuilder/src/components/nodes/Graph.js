@@ -81,6 +81,11 @@ export default function GraphApp() {
     if (!selectedNodeId) return;
 
     const idToDelete = selectedNodeId;
+    
+    // Removing React from the node list
+    setNodes(prev => prev.filter(n => n.id !== idToDelete));
+    // Remove all related links
+    setLinks(prev => prev.filter(l => l.from !== idToDelete && l.to !== idToDelete));
 
     // Removing coordinames from the Skia Store, nodesStore (UI Thread)
     nodesStore.modify((val) => {
@@ -88,12 +93,6 @@ export default function GraphApp() {
       delete val[idToDelete];
       return val;
     });
-
-    // Removing React from the node list
-    setNodes(prev => prev.filter(n => n.id !== idToDelete));
-
-    // Remove all related links
-    setLinks(prev => prev.filter(l => l.from !== idToDelete && l.to !== idToDelete));
 
     setMenuVisible(false);
     setSelectedNodeId(null);
