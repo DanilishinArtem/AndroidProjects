@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, Text } from 'react-native';
-import { Canvas, useFont } from '@shopify/react-native-skia';
+import { Canvas, Group, useFont } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {RenderMenu, RenderTempLine, RenderLink, RenderNode, styles} from './RenderFunctions';
 import { runOnJS } from 'react-native-worklets';
+import { useDerivedValue } from 'react-native-reanimated';
 const NODE_SIZE = 80;
 
 export default function GraphApp() {
@@ -37,6 +38,14 @@ export default function GraphApp() {
   const tempLine = useSharedValue({ x1: 0, y1: 0, x2: 0, y2: 0 });
   // Start of offset. To ensure absolute dragging, rather than jumping.
   const startDragOffset = useSharedValue({ x: 0, y: 0 });
+
+  const scale = useSharedValue(1);
+  const savedScale = useSharedValue(1);
+  const translateX = useSharedValue(0);
+  const translateY = useSharedValue(0);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+
   // mergeGraphs: logical union of subgraphs. Called then user has dragged the link to another node.
   const mergeGraphs = (fromId, toId) => {
     setLinks(prev => [...prev, { from: fromId, to: toId }]);
@@ -195,17 +204,19 @@ export default function GraphApp() {
 
   const pan = Gesture.Pan()
     .onBegin((e) => {
+      const adjX = (e.x - translateX.value) / scale.value;
+      const adjY = (e.y - translateY.value) / scale.value;
       if (menuVisible) {
         const mx = menuPos.value.x;
         const my = menuPos.value.y;
         
         // Кнопка YES (координаты относительно меню)
-        if (e.x >= mx + 10 && e.x <= mx + 70 && e.y >= my + 40 && e.y <= my + 70) {
+        if (adjX >= mx + 10 && adjX <= mx + 70 && adjY >= my + 40 && adjY <= my + 70) {
           runOnJS(deleteNode)();
           return;
         }
         // Кнопка NO
-        if (e.x >= mx + 80 && e.x <= mx + 140 && e.y >= my + 40 && e.y <= my + 70) {
+        if (adjX >= mx + 80 && adjX <= mx + 140 && adjY >= my + 40 && adjY <= my + 70) {
           runOnJS(setMenuVisible)(false);
           return;
         }
@@ -217,13 +228,13 @@ export default function GraphApp() {
       const store = nodesStore.value;
       for (const id in store) {
         const n = store[id];
-        if (e.x >= n.x && e.x <= n.x + NODE_SIZE && e.y >= n.y && e.y <= n.y + NODE_SIZE) {
+        if (adjX >= n.x && adjX <= n.x + NODE_SIZE && adjY >= n.y && adjY <= n.y + NODE_SIZE) {
           activeNodeId.value = id;
-          const isBottomEdge = e.y > n.y + NODE_SIZE - 25;
+          const isBottomEdge = adjY > n.y + NODE_SIZE - 25;
 
           if (isBottomEdge) {
             isConnecting.value = true;
-            tempLine.value = { x1: n.x + NODE_SIZE / 2, y1: n.y + NODE_SIZE, x2: e.x, y2: e.y };
+            tempLine.value = { x1: n.x + NODE_SIZE / 2, y1: n.y + NODE_SIZE, x2: adjX, y2: adjY };
           } else {
             startDragOffset.value = { x: n.x, y: n.y };
             nodesStore.modify((val) => {
@@ -237,28 +248,32 @@ export default function GraphApp() {
       }
     })
     .onUpdate((e) => {
+      const adjX = (e.x - translateX.value) / scale.value;
+      const adjY = (e.y - translateY.value) / scale.value;
       if (!activeNodeId.value) return;
       if (isConnecting.value) {
-        tempLine.value = { ...tempLine.value, x2: e.x, y2: e.y };
+        tempLine.value = { ...tempLine.value, x2: adjX, y2: adjY };
       } else {
         nodesStore.modify((val) => {
           'worklet';
           const id = activeNodeId.value;
           if (val[id]) {
-            val[id].x = startDragOffset.value.x + e.translationX;
-            val[id].y = startDragOffset.value.y + e.translationY;
+            val[id].x = startDragOffset.value.x + (e.translationX / scale.value);
+            val[id].y = startDragOffset.value.y + (e.translationY / scale.value);
           }
           return val;
         });
       }
     })
     .onFinalize((e) => {
+      const adjX = (e.x - translateX.value) / scale.value;
+      const adjY = (e.y - translateY.value) / scale.value;
       if (isConnecting.value) {
         let targetId = null;
         const store = nodesStore.value;
         for (const id in store) {
           const n = store[id];
-          if (id !== activeNodeId.value && e.x >= n.x && e.x <= n.x + NODE_SIZE && e.y >= n.y && e.y <= n.y + NODE_SIZE) {
+          if (id !== activeNodeId.value && adjX >= n.x && adjX <= n.x + NODE_SIZE && adjY >= n.y && adjY <= n.y + NODE_SIZE) {
             targetId = id;
             break;
           }
@@ -279,23 +294,53 @@ export default function GraphApp() {
 
   const longPress = Gesture.LongPress()
     .onStart((e) => {
+      const adjX = (e.x - translateX.value) / scale.value;
+      const adjY = (e.y - translateY.value) / scale.value;
       const store = nodesStore.value;
       for (const id in store) {
         const n = store[id];
-        if (e.x >= n.x && e.x <= n.x + NODE_SIZE && e.y >= n.y && e.y <= n.y + NODE_SIZE) {
+        if (adjX >= n.x && adjX <= n.x + NODE_SIZE && adjY >= n.y && adjY <= n.y + NODE_SIZE) {
           // Remember where to draw the menu
-          menuPos.value = { x: e.x, y: e.y };
+          menuPos.value = { x: adjX, y: adjY };
           runOnJS(setSelectedNodeId)(id);
           runOnJS(setMenuVisible)(true);
           break;
         }
       }
     });
+
+  const canvasGesture = Gesture.Simultaneous(
+    Gesture.Pinch()
+      .onUpdate((e) => {
+        scale.value = savedScale.value * e.scale;
+      })
+      .onEnd(() => {
+        savedScale.value = scale.value;
+      }),
+    Gesture.Pan()
+      .minPointers(2) // Срабатывает только от 2-х пальцев, чтобы не мешать Pan ноды
+      .onUpdate((e) => {
+        translateX.value = savedTranslateX.value + e.translationX;
+        translateY.value = savedTranslateY.value + e.translationY;
+      })
+      .onEnd(() => {
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+      })
+  );
+
   // Gesture.Simultaneous(pan, longPress): is a parallel operation. 
   // Both gestures can be active at the same time. We don't need this, so we use Race.
-  const composedGesture = Gesture.Race(pan, longPress);
+  const nodeGestures = Gesture.Race(pan, longPress);
+  // Final composition:
+  // Simultaneous allows the background to scale even if one finger is on a node
+  const composedGesture = Gesture.Simultaneous(nodeGestures, canvasGesture);
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 11);
-
+  const sceneTransform = useDerivedValue(() => [
+    { translateX: translateX.value },
+    { translateY: translateY.value },
+    { scale: scale.value },
+  ]);
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
@@ -311,24 +356,26 @@ export default function GraphApp() {
 
         <GestureDetector gesture={composedGesture}>
           <Canvas style={styles.canvas}>
-            {/* array.map((element, index) => { */}
-            {links.map((l, i) => (
-              <RenderLink key={i} fromId={l.from} toId={l.to} store={nodesStore} />
-            ))}
-            <RenderTempLine tempLine={tempLine} isConnecting={isConnecting} />
-            {nodes.map(n => (
-              <RenderNode 
-                key={n.id} id={n.id} store={nodesStore} font={font} 
-                incoming={links.filter(l => l.to === n.id).map(l => l.from.slice(-4)).join(',')}
-                outgoing={links.filter(l => l.from === n.id).map(l => l.to.slice(-4)).join(',')}
+            <Group transform={sceneTransform}>
+              {/* array.map((element, index) => { */}
+              {links.map((l, i) => (
+                <RenderLink key={i} fromId={l.from} toId={l.to} store={nodesStore} />
+              ))}
+              <RenderTempLine tempLine={tempLine} isConnecting={isConnecting} />
+              {nodes.map(n => (
+                <RenderNode 
+                  key={n.id} id={n.id} store={nodesStore} font={font} 
+                  incoming={links.filter(l => l.to === n.id).map(l => l.from.slice(-4)).join(',')}
+                  outgoing={links.filter(l => l.from === n.id).map(l => l.to.slice(-4)).join(',')}
+                />
+              ))}
+              <RenderMenu 
+                visible={menuVisible} 
+                pos={menuPos} 
+                font={font} 
+                nodeId={selectedNodeId} 
               />
-            ))}
-            <RenderMenu 
-              visible={menuVisible} 
-              pos={menuPos} 
-              font={font} 
-              nodeId={selectedNodeId} 
-            />
+            </Group>
           </Canvas>
         </GestureDetector>
         <TouchableOpacity style={styles.btn} onPress={addNewNode}>
