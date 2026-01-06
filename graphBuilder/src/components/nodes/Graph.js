@@ -77,24 +77,75 @@ export default function GraphApp() {
     setNodes(prev => [...prev, { id, graphId }]);
   };
 
+  const recalculateGraphIds = (currentNodes, currentLinks) => {
+    const visited = new Set();
+    const resultNodes = [];
+    var counter = 1;
+    currentNodes.forEach(startNode => {
+      if (!visited.has(startNode.id)) {
+        // Found a new connectivity component - generate a unique ID for it
+        const newGraphId = `g_n_${Math.round(Date.now() + counter)}`;
+        counter = counter + 1;
+        // BFS to find all connected nodes
+        const queue = [startNode.id];
+        visited.add(startNode.id);
+
+        while (queue.length > 0) {
+          const nodeId = queue.shift();
+          const node = currentNodes.find(n => n.id === nodeId);
+          
+          if (node) {
+            resultNodes.push({ ...node, graphId: newGraphId });
+          }
+
+          // We are looking for neighbors through links
+          currentLinks.forEach(link => {
+            let neighborId = null;
+            if (link.from === nodeId) neighborId = link.to;
+            if (link.to === nodeId) neighborId = link.from;
+
+            if (neighborId && !visited.has(neighborId)) {
+              visited.add(neighborId);
+              queue.push(neighborId);
+            }
+          });
+        }
+      }
+    });
+
+    return resultNodes;
+  };
+
   const deleteNode = () => {
     if (!selectedNodeId) return;
 
     const idToDelete = selectedNodeId;
 
-    // Removing coordinames from the Skia Store, nodesStore (UI Thread)
+    // 1. First, we update the links, removing everything that led to and out of the node being deleted
+    const updatedLinks = links.filter(l => l.from !== idToDelete && l.to !== idToDelete);
+    
+    // 2. Removing the node itself from the React list
+    const updatedNodes = nodes.filter(n => n.id !== idToDelete);
+
+    // 3. Recalculate GraphIds for all nodes
+    const newNodes = recalculateGraphIds(updatedNodes, updatedLinks);
+
+    // 4. Update nodesStore (UI Thread) for Skia
     nodesStore.modify((val) => {
       'worklet';
-      delete val[idToDelete];
+      delete val[idToDelete]; // Delete the node
+      // Synchronize new graphIds for all other nodes
+      newNodes.forEach(node => {
+        if (val[node.id]) {
+          val[node.id].graphId = node.graphId;
+        }
+      });
       return val;
     });
 
-    // Removing React from the node list
-    setNodes(prev => prev.filter(n => n.id !== idToDelete));
-
-    // Remove all related links
-    setLinks(prev => prev.filter(l => l.from !== idToDelete && l.to !== idToDelete));
-
+    // 5. Update React State
+    setLinks(updatedLinks);
+    setNodes(newNodes);
     setMenuVisible(false);
     setSelectedNodeId(null);
   };
