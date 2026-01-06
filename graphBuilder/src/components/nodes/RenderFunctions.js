@@ -1,6 +1,6 @@
 
 import React, { memo } from 'react';
-import { Rect, Circle, Line, Group, Paint, Shadow, Text as SkiaText} from '@shopify/react-native-skia';
+import { Rect, Circle, Line, Group, Paint, Shadow, Text as SkiaText, Path, Skia, DashPathEffect } from '@shopify/react-native-skia';
 import { useDerivedValue } from 'react-native-reanimated';
 import { StyleSheet} from 'react-native';
 
@@ -83,36 +83,86 @@ export const RenderNode = ({ id, store, font, incoming, outgoing }) => {
 };
 
 export const RenderLink = ({ fromId, toId, store }) => {
-  const p1 = useDerivedValue(() => ({
-    x: (store.value[fromId]?.x ?? 0) + NODE_SIZE / 2,
-    y: (store.value[fromId]?.y ?? 0) + NODE_SIZE
-  }));
-  const p2 = useDerivedValue(() => ({
-    x: (store.value[toId]?.x ?? 0) + NODE_SIZE / 2,
-    y: (store.value[toId]?.y ?? 0)
-  }));
+  // Вычисляем путь кривой
+  const path = useDerivedValue(() => {
+    const from = store.value[fromId];
+    const to = store.value[toId];
+
+    if (!from || !to) return Skia.Path.Make(); // Empty path if threre are no nodes
+
+    const x1 = from.x + NODE_SIZE / 2;
+    const y1 = from.y + NODE_SIZE; // Exit from below
+    const x2 = to.x + NODE_SIZE / 2;
+    const y2 = to.y; // Entrance from above
+
+    // Vertical distance between nodes for bending calculation
+    const verticalDistance = Math.abs(y2 - y1);
+    const curveOffset = Math.max(verticalDistance / 2, 20); 
+
+    const newPath = Skia.Path.Make();
+    // Moves the pen to the start point
+    newPath.moveTo(x1, y1);
+    
+    // Cubic Bezier curve: Draws a cubic Bezier curve from the current pen position to the specified end point, by using two control points
+    // c1x, c1y (checkpoint 1, pull the corve down from the port), c2x, c2y (checkpoint 2, brings the curve up to the finger), x2, y2 (finish)
+    // start → cp1 → cp2 → end
+    newPath.cubicTo(
+      x1, y1 + curveOffset, // Pull down from the first node
+      x2, y2 - curveOffset, // Pull up to the second node
+      x2, y2
+    );
+
+    return newPath;
+  });
+
   const opacity = useDerivedValue(() => 
     (store.value[fromId] && store.value[toId]) ? 1 : 0
   );
+
   return (
-    <Line 
-      p1={p1}
-      p2={p2} 
+    <Path
+      path={path}
+      color="cyan"
+      style="stroke"
+      strokeWidth={2}
       opacity={opacity}
-      color="cyan" 
-      strokeWidth={2} 
     />
   );
 };
 
 export const RenderTempLine = ({ tempLine, isConnecting }) => {
-  const p1 = useDerivedValue(() => ({ x: tempLine.value.x1, y: tempLine.value.y1 }));
-  const p2 = useDerivedValue(() => ({ x: tempLine.value.x2, y: tempLine.value.y2 }));
-  // opacity is the alpha channel, range:
-  // 0 → completely transparent
-  // 1 → completely visible
-  const opacity = useDerivedValue(() => isConnecting.value ? 1 : 0);
-  return <Line p1={p1} p2={p2} color="white" strokeWidth={2} opacity={opacity} strokeCap="round" />;
+  const path = useDerivedValue(() => {
+    const { x1, y1, x2, y2 } = tempLine.value;
+    
+    const newPath = Skia.Path.Make();
+    newPath.moveTo(x1, y1);
+
+    const dist = Math.abs(y2 - y1) / 2;
+    const offset = Math.max(dist, 20);
+
+    newPath.cubicTo(
+      x1, y1 + offset,
+      x2, y2 - offset,
+      x2, y2
+    );
+
+    return newPath;
+  });
+
+  const opacity = useDerivedValue(() => (isConnecting.value ? 1 : 0));
+
+  return (
+    <Path
+      path={path}
+      color="cyan"
+      style="stroke"
+      strokeWidth={2}
+      opacity={opacity}
+      strokeCap="round"
+    >
+      <DashPathEffect intervals={[10, 5]} />
+    </Path>
+  );
 };
 
 export const styles = StyleSheet.create({
