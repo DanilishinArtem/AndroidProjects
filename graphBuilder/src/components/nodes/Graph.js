@@ -318,7 +318,8 @@ export default function GraphApp() {
         savedScale.value = scale.value;
       }),
     Gesture.Pan()
-      .minPointers(2) // Срабатывает только от 2-х пальцев, чтобы не мешать Pan ноды
+      // it only works with 2 fingers so a not to interfere with node Pan
+      .minPointers(2)
       .onUpdate((e) => {
         translateX.value = savedTranslateX.value + e.translationX;
         translateY.value = savedTranslateY.value + e.translationY;
