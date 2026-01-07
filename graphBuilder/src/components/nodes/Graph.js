@@ -45,6 +45,7 @@ export default function GraphApp() {
   const translateY = useSharedValue(0);
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
+  const pinchCenter = useSharedValue({ x: 0, y: 0 });
 
   // mergeGraphs: logical union of subgraphs. Called then user has dragged the link to another node.
   const mergeGraphs = (fromId, toId) => {
@@ -309,33 +310,49 @@ export default function GraphApp() {
       }
     });
 
-  const canvasGesture = Gesture.Simultaneous(
-    Gesture.Pinch()
-      .onUpdate((e) => {
-        scale.value = savedScale.value * e.scale;
-      })
-      .onEnd(() => {
-        savedScale.value = scale.value;
-      }),
-    Gesture.Pan()
-      // it only works with 2 fingers so a not to interfere with node Pan
-      .minPointers(2)
-      .onUpdate((e) => {
-        translateX.value = savedTranslateX.value + e.translationX;
-        translateY.value = savedTranslateY.value + e.translationY;
-      })
-      .onEnd(() => {
-        savedTranslateX.value = translateX.value;
-        savedTranslateY.value = translateY.value;
-      })
-  );
+  const canvasPan = Gesture.Pan()
+    .maxPointers(1)
+    .onStart(() => {
+      if (activeNodeId.value !== null) return;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+    })
+    .onUpdate((e) => {
+      if (activeNodeId.value !== null) return;
+      translateX.value = savedTranslateX.value + e.translationX;
+      translateY.value = savedTranslateY.value + e.translationY;
+    });
 
+  const canvasPinch = Gesture.Pinch()
+    .onStart((e) => {
+      savedScale.value = scale.value;
+      savedTranslateX.value = translateX.value;
+      savedTranslateY.value = translateY.value;
+
+      // зафиксируем center на старте в координатах канваса
+      pinchCenter.value = {
+        x: (e.focalX - translateX.value) / scale.value,
+        y: (e.focalY - translateY.value) / scale.value
+      };
+    })
+    .onUpdate((e) => {
+      const nextScale = savedScale.value * e.scale;
+
+      // пересчет translate относительно зафиксированного центра
+      translateX.value = savedTranslateX.value - pinchCenter.value.x * (nextScale - savedScale.value);
+      translateY.value = savedTranslateY.value - pinchCenter.value.y * (nextScale - savedScale.value);
+
+      scale.value = nextScale;
+    });
+
+  const canvasGesture = Gesture.Simultaneous(canvasPan, canvasPinch);
   // Gesture.Simultaneous(pan, longPress): is a parallel operation. 
   // Both gestures can be active at the same time. We don't need this, so we use Race.
   const nodeGestures = Gesture.Race(pan, longPress);
   // Final composition:
   // Simultaneous allows the background to scale even if one finger is on a node
   const composedGesture = Gesture.Simultaneous(nodeGestures, canvasGesture);
+  // const composedGesture = Gesture.Simultaneous(canvasGesture);
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 11);
   const sceneTransform = useDerivedValue(() => [
     { translateX: translateX.value },
