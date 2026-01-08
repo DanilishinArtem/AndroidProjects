@@ -46,9 +46,17 @@ export default function GraphApp() {
   const savedTranslateX = useSharedValue(0);
   const savedTranslateY = useSharedValue(0);
   const pinchCenter = useSharedValue({ x: 0, y: 0 });
+  const isPinching = useSharedValue(false);
 
   // mergeGraphs: logical union of subgraphs. Called then user has dragged the link to another node.
   const mergeGraphs = (fromId, toId) => {
+    // Protection from self-connection
+    if (fromId === toId) return;
+    // Reconnection protection
+    const linkExists = links.some(
+      l => (l.from === fromId && l.to === toId) || (l.from === toId && l.to === fromId)
+    );
+    if (linkExists) return;
     setLinks(prev => [...prev, { from: fromId, to: toId }]);
     
     const targetGraphId = nodesStore.value[toId]?.graphId;
@@ -211,7 +219,7 @@ export default function GraphApp() {
         const mx = menuPos.value.x;
         const my = menuPos.value.y;
         
-        // Кнопка YES (координаты относительно меню)
+        // YES button (coordinates relative to the menu)
         if (adjX >= mx + 10 && adjX <= mx + 70 && adjY >= my + 40 && adjY <= my + 70) {
           runOnJS(deleteNode)();
           return;
@@ -221,7 +229,7 @@ export default function GraphApp() {
           runOnJS(setMenuVisible)(false);
           return;
         }
-        // Если нажали мимо меню — просто закрываем его
+        // If you clicked past the menu, just close it.
         runOnJS(setMenuVisible)(false);
         return;
       }
@@ -309,27 +317,30 @@ export default function GraphApp() {
         }
       }
     });
-
+  
   const canvasPan = Gesture.Pan()
-    .maxPointers(1)
+    .minPointers(2)
     .onStart(() => {
-      if (activeNodeId.value !== null) return;
+      if (isPinching.value || activeNodeId.value !== null) return;
       savedTranslateX.value = translateX.value;
       savedTranslateY.value = translateY.value;
     })
     .onUpdate((e) => {
-      if (activeNodeId.value !== null) return;
+      if (isPinching.value || activeNodeId.value !== null) return;
       translateX.value = savedTranslateX.value + e.translationX;
       translateY.value = savedTranslateY.value + e.translationY;
     });
 
   const canvasPinch = Gesture.Pinch()
     .onStart((e) => {
+      isPinching.value = true;
       savedScale.value = scale.value;
       savedTranslateX.value = translateX.value;
       savedTranslateY.value = translateY.value;
 
-      // зафиксируем center на старте в координатах канваса
+      // Fix the center at the start in canvas coordinates
+      // screenX = translateX + canvasX * scalescreenX
+      // And as e.focal is in screen coordinates: canvasX = (screenX - translateX) / scale, and same for Y
       pinchCenter.value = {
         x: (e.focalX - translateX.value) / scale.value,
         y: (e.focalY - translateY.value) / scale.value
@@ -338,11 +349,16 @@ export default function GraphApp() {
     .onUpdate((e) => {
       const nextScale = savedScale.value * e.scale;
 
-      // пересчет translate относительно зафиксированного центра
+      // Recalculation translate relative to a fixed center
+      // Screen = translateOld + pinchCenter * scaleOld = translateNew + pinchCenter * scaleNew
+      // translateNew = translateOld - pinchCenter * (scaleNew - scaleOld)
       translateX.value = savedTranslateX.value - pinchCenter.value.x * (nextScale - savedScale.value);
       translateY.value = savedTranslateY.value - pinchCenter.value.y * (nextScale - savedScale.value);
 
       scale.value = nextScale;
+    })
+    .onEnd(() => {
+      isPinching.value = false;
     });
 
   const canvasGesture = Gesture.Simultaneous(canvasPan, canvasPinch);
