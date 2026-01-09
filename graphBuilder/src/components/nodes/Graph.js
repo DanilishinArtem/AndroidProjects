@@ -4,7 +4,7 @@ import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, RenderMenu, RenderTempLine, RenderLink, RenderNode, MinimapNode, MinimapLink, styles} from './RenderFunctions';
+import {MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, RenderMenu, RenderTempLine, RenderLink, RenderNode, MinimapNode, MinimapLink, styles} from './RenderFunctions';
 import { runOnJS } from 'react-native-worklets';
 import { useDerivedValue } from 'react-native-reanimated';
 
@@ -89,13 +89,15 @@ export default function GraphApp() {
   const addNewNode = () => {
     const id = `n_${Date.now()}`;
     const graphId = `g_${id}`;
+    const centerX = (screenWidth / 4 - translateX.value) / scale.value;
+    const centerY = (screenHeight / 4 - translateY.value) / scale.value;
     // Why .modify, 
     // 1. Overwrites the object, 2. Breaks references, 3. Heavier for Reanimated
     // but not nodesStore.value = ...
     // 1. Mutates the object on the UI thread, 2. Fast, 3. Safe
     nodesStore.modify((value) => {
       'worklet'; // THIS FUNCTION IS EXECUTED ON THE UI THREAD
-      value[id] = { x: 150, y: 100, graphId, isActive: 0 };
+      value[id] = { x: centerX, y: centerY, graphId, isActive: 0 };
       return value;
     });
     setNodes(prev => [...prev, { id, graphId }]);
@@ -354,6 +356,8 @@ export default function GraphApp() {
     })
     .onUpdate((e) => {
       const nextScale = savedScale.value * e.scale;
+      if (nextScale < MIN_SCALE) nextScale = MIN_SCALE;
+      if (nextScale > MAX_SCALE) nextScale = MAX_SCALE;
 
       // Recalculation translate relative to a fixed center
       // Screen = translateOld + pinchCenter * scaleOld = translateNew + pinchCenter * scaleNew

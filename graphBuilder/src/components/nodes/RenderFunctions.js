@@ -7,8 +7,10 @@ import { StyleSheet} from 'react-native';
 export const NODE_SIZE = 80;
 const PORT_RADIUS = 6;
 const OFF = -10000;
-export const MINIMAP_SIZE = 150; // Размер квадрата миникарты
-export const WORLD_SIZE = 5000;  // Виртуальный размер всего вашего поля
+export const MINIMAP_SIZE = 150; // Size of the minimap in pixels
+export const WORLD_SIZE = 5000;  // Virtual world size for minimap calculations
+export const MIN_SCALE = 0.25;
+export const MAX_SCALE = 2.0;
 
 export const RenderMenu = ({ visible, pos, font, nodeId }) => {
   const transform = useDerivedValue(() => [
