@@ -4,9 +4,11 @@ import { Rect, Circle, Line, Group, Paint, Shadow, Text as SkiaText, Path, Skia,
 import { useDerivedValue } from 'react-native-reanimated';
 import { StyleSheet} from 'react-native';
 
-const NODE_SIZE = 80;
+export const NODE_SIZE = 80;
 const PORT_RADIUS = 6;
 const OFF = -10000;
+export const MINIMAP_SIZE = 150; // Размер квадрата миникарты
+export const WORLD_SIZE = 5000;  // Виртуальный размер всего вашего поля
 
 export const RenderMenu = ({ visible, pos, font, nodeId }) => {
   const transform = useDerivedValue(() => [
@@ -165,6 +167,47 @@ export const RenderTempLine = ({ tempLine, isConnecting }) => {
   );
 };
 
+export const MinimapNode = ({ id, store, OFF }) => {
+    const x = useDerivedValue(() => {
+      const n = store.value[id];
+      return n ? n.x : OFF;
+    });
+    const y = useDerivedValue(() => {
+      const n = store.value[id];
+      return n ? n.y : OFF;
+    });
+    return (
+      <Rect 
+      x={x} 
+      y={y} 
+      width={100} 
+      height={100} 
+      color="#858585c5"
+      />
+    );
+};
+
+export const MinimapLink = ({ fromId, toId, store }) => {
+  const path = useDerivedValue(() => {
+    const from = store.value[fromId];
+    const to = store.value[toId];
+    if (!from || !to) return Skia.Path.Make();
+
+    const newPath = Skia.Path.Make();
+    newPath.moveTo(from.x + 50, from.y + 25);
+    newPath.lineTo(to.x + 50, to.y + 25);
+    return newPath;
+  });
+  return (
+    <Path
+      path={path}
+      color="cyan"
+      style="stroke"
+    />
+  );
+};
+
+
 export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: '#0A0A0A' },
   canvas: { flex: 1 },
@@ -178,4 +221,5 @@ export const styles = StyleSheet.create({
   modalButtons: {flexDirection: 'row', justifyContent: 'space-between'},
   mBtn: {paddingVertical: 10, paddingHorizontal: 30, borderRadius: 10},
   mBtnText: {color: 'white', fontWeight: 'bold'},
+  minimapContainer: {position: 'absolute', bottom: 100, right: 20, width: MINIMAP_SIZE, height: MINIMAP_SIZE, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 8, borderWidth: 1, borderColor: '#555',overflow: 'hidden',}
 });

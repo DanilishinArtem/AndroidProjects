@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
 import { View, TouchableOpacity, Text } from 'react-native';
-import { Canvas, Group, useFont } from '@shopify/react-native-skia';
+import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {RenderMenu, RenderTempLine, RenderLink, RenderNode, styles} from './RenderFunctions';
+import {NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, RenderMenu, RenderTempLine, RenderLink, RenderNode, MinimapNode, MinimapLink, styles} from './RenderFunctions';
 import { runOnJS } from 'react-native-worklets';
 import { useDerivedValue } from 'react-native-reanimated';
-const NODE_SIZE = 80;
+
+
+import { useWindowDimensions } from 'react-native';
+// Внутри функционального компонента:
+
 
 export default function GraphApp() {
+  const MINIMAP_RATIO = MINIMAP_SIZE / WORLD_SIZE;
+  const { width: screenWidth, height: screenHeight } = useWindowDimensions();
   // This variables for: React render, JSX, text, lists
   // list of nodes for react components: { id, graphId }
   const [nodes, setNodes] = useState([]);
@@ -370,15 +376,45 @@ export default function GraphApp() {
   const composedGesture = Gesture.Simultaneous(nodeGestures, canvasGesture);
   // const composedGesture = Gesture.Simultaneous(canvasGesture);
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 11);
+  
+  const viewportRectStyle = useDerivedValue(() => {
+    // Calculate the frame size (the larger the zoom on the main screen, the smaller the frame on the minimap)
+    const w = (screenWidth / scale.value) * MINIMAP_RATIO;
+    const h = (screenHeight / scale.value) * MINIMAP_RATIO;
+    // Calculate the frame position relative on the minimap center
+    const x = (-translateX.value / scale.value) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
+    const y = (-translateY.value / scale.value) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
+    
+    return {
+      x, y, width: w, height: h
+    };
+  });
+  
+  const minimapGesture = Gesture.Pan()
+    .onUpdate((e) => {
+      // To jump to a point on the minimap:
+      // We need to convert the click coordinates (0...150) to world coordinates (0...5000)
+      // And subtract half the screen so the point is centered
+      const targetWorldX = (e.x / MINIMAP_RATIO) - (WORLD_SIZE / 2);
+      const targetWorldY = (e.y / MINIMAP_RATIO) - (WORLD_SIZE / 2);
+      
+      // The scale should only affect the final offset
+      translateX.value = -targetWorldX * scale.value + (screenWidth / 2);
+      translateY.value = -targetWorldY * scale.value + (screenHeight / 2);
+  });
+    // General transformation for the minimap contents (to fit everything within the minimap square)
+  const minimapContentTransform = [{ scale: MINIMAP_RATIO }, { translateX: WORLD_SIZE / 2 }, { translateY: WORLD_SIZE / 2 }];
+
   const sceneTransform = useDerivedValue(() => [
     { translateX: translateX.value },
     { translateY: translateY.value },
     { scale: scale.value },
   ]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
-
+        
         <View style={styles.menu}>
           <TouchableOpacity style={styles.menuBtn} onPress={saveGraph}>
             <Text style={styles.menuText}>SAVE</Text>
@@ -412,9 +448,45 @@ export default function GraphApp() {
             </Group>
           </Canvas>
         </GestureDetector>
+
+        <GestureDetector gesture={minimapGesture}>
+          <View style={styles.minimapContainer}>
+            <Canvas style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }}>
+              <Group transform={minimapContentTransform}>
+                {nodes.map(n => (
+                  <MinimapNode 
+                    key={n.id} 
+                    id={n.id} 
+                    store={nodesStore} 
+                    OFF={-10000} 
+                  />
+                ))}
+                {links.map((l, i) => (
+                  <MinimapLink 
+                    key={`ml-${i}`} 
+                    fromId={l.from} 
+                    toId={l.to} 
+                    store={nodesStore} 
+                  />
+                ))}
+              </Group>
+              <Rect
+                x={useDerivedValue(() => viewportRectStyle.value.x)}
+                y={useDerivedValue(() => viewportRectStyle.value.y)}
+                width={useDerivedValue(() => viewportRectStyle.value.width)}
+                height={useDerivedValue(() => viewportRectStyle.value.height)}
+                color="rgba(0, 255, 0, 0.4)"
+                style="stroke"
+                strokeWidth={2}
+              />
+            </Canvas>
+          </View>
+        </GestureDetector>
+
         <TouchableOpacity style={styles.btn} onPress={addNewNode}>
           <Text style={{color:'#fff', fontWeight:'bold'}}>+ ADD NODE</Text>
         </TouchableOpacity>
+
       </View>
     </GestureHandlerRootView>
   );
