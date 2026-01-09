@@ -15,7 +15,7 @@ export default function GraphApp() {
   const MINIMAP_RATIO = MINIMAP_SIZE / WORLD_SIZE;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
-  // React state: списки (легковесные)
+  // React state: lists (lightweight)
   const [nodes, setNodes] = useState([]); // [{id, graphId}]
   const [links, setLinks] = useState([]); // [{id, from, to}]
   const [menuVisible, setMenuVisible] = useState(false);
@@ -40,15 +40,15 @@ export default function GraphApp() {
   const pinchCenter = useSharedValue({ x: 0, y: 0 });
   const isPinching = useSharedValue(false);
 
-  // ---------- Helpers оптимизированные ----------
-  // Генерация id для ссылки (стабильный key)
+  // ---------- Helpers optimized ----------
+  // Generating id for a link (stable key)
   const makeLinkId = useCallback((from, to) => `${from}__${to}__${Date.now()}`, []);
 
-  // mergeGraphs: добавление ссылки и слияние graphId'ов (оптимизировано)
+  // mergeGraphs: Adding a link and merging graphs
   const mergeGraphs = useCallback((fromId, toId) => {
     if (fromId === toId) return;
 
-    // защита от существующих ребер (O(L))
+    // protection from existing links (O(L))
     const exists = links.some(
       l => (l.from === fromId && l.to === toId) || (l.from === toId && l.to === fromId)
     );
@@ -61,21 +61,20 @@ export default function GraphApp() {
     const sourceGraphId = nodesStore.value[fromId]?.graphId;
     if (!targetGraphId || !sourceGraphId || targetGraphId === sourceGraphId) return;
 
-    // обновляем nodesStore на UI-thread (worklet)
+    // updating nodesStore on the UI thread (worklet)
     nodesStore.modify((val) => {
       'worklet';
-      // меняем graphId для всех нод источника
+      // change graphId for all source nodes
       for (const id in val) {
         if (val[id].graphId === sourceGraphId) val[id].graphId = targetGraphId;
       }
       return val;
     });
 
-    // синхронизируем React-список (легковесно)
     setNodes(prev => prev.map(n => (n.graphId === sourceGraphId ? { ...n, graphId: targetGraphId } : n)));
   }, [links, makeLinkId, nodesStore]);
 
-  // addNewNode (оптимизировано, минимальные аллокации)
+  // addNewNode
   const addNewNode = useCallback(() => {
     const id = `n_${Date.now()}`;
     const graphId = `g_${id}`;
@@ -92,7 +91,7 @@ export default function GraphApp() {
     setNodes(prev => [...prev, { id, graphId }]);
   }, [screenWidth, screenHeight, nodesStore, translateX, translateY, scale]);
 
-  // recalculateGraphIds: теперь O(N + L) — строю карты для быстрого BFS
+  // recalculateGraphIds: Now it's O(N + L) — Throughput building maps for fast BFS
   const recalculateGraphIds = useCallback((currentNodes, currentLinks) => {
     const nodeMap = new Map(currentNodes.map(n => [n.id, { ...n }]));
     const adj = new Map();
@@ -133,11 +132,11 @@ export default function GraphApp() {
       }
     }
 
-    // Важно: если были ноды без связей — они тоже обработаны (они входят в цикл)
+    // Important: if there were nodes without connections, they are also processed (they are included in the cycle)
     return result;
   }, []);
 
-  // deleteNode: оптимизировано, использует recalculateGraphIds
+  // deleteNode: optimized, uses recalculateGraphIds
   const deleteNode = useCallback(() => {
     if (!selectedNodeId) return;
     const idToDelete = selectedNodeId;
@@ -147,7 +146,7 @@ export default function GraphApp() {
 
     const newNodes = recalculateGraphIds(updatedNodes, updatedLinks);
 
-    // Обновляем nodesStore на UI-thread
+    // Updating nodesStore on the UI thread
     nodesStore.modify((val) => {
       'worklet';
       if (val[idToDelete]) delete val[idToDelete];
@@ -182,7 +181,7 @@ export default function GraphApp() {
 
       nodesStore.modify((val) => {
         'worklet';
-        // очистить и записать заново
+        // clear and rewrite
         for (const k in val) delete val[k];
         Object.assign(val, savedData.coords);
         return val;
