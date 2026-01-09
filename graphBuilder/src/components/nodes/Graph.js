@@ -1,16 +1,12 @@
 import React, { useState } from 'react';
-import { View, TouchableOpacity, Text } from 'react-native';
+import { View, TouchableOpacity, Text, useWindowDimensions } from 'react-native';
 import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useSharedValue } from 'react-native-reanimated';
+import { useSharedValue, clamp, withSpring } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import {MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, RenderMenu, RenderTempLine, RenderLink, RenderNode, MinimapNode, MinimapLink, styles} from './RenderFunctions';
 import { runOnJS } from 'react-native-worklets';
 import { useDerivedValue } from 'react-native-reanimated';
-
-
-import { useWindowDimensions } from 'react-native';
-// Внутри функционального компонента:
 
 
 export default function GraphApp() {
@@ -335,8 +331,10 @@ export default function GraphApp() {
     })
     .onUpdate((e) => {
       if (isPinching.value || activeNodeId.value !== null) return;
-      translateX.value = savedTranslateX.value + e.translationX;
-      translateY.value = savedTranslateY.value + e.translationY;
+      const nextX = savedTranslateX.value + e.translationX;
+      const nextY = savedTranslateY.value + e.translationY;
+      translateX.value = withSpring(nextX);
+      translateY.value = withSpring(nextY);
     });
 
   const canvasPinch = Gesture.Pinch()
@@ -364,7 +362,6 @@ export default function GraphApp() {
       // translateNew = translateOld - pinchCenter * (scaleNew - scaleOld)
       translateX.value = savedTranslateX.value - pinchCenter.value.x * (nextScale - savedScale.value);
       translateY.value = savedTranslateY.value - pinchCenter.value.y * (nextScale - savedScale.value);
-
       scale.value = nextScale;
     })
     .onEnd(() => {
@@ -381,30 +378,47 @@ export default function GraphApp() {
   // const composedGesture = Gesture.Simultaneous(canvasGesture);
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 11);
   
-  const viewportRectStyle = useDerivedValue(() => {
-    // Calculate the frame size (the larger the zoom on the main screen, the smaller the frame on the minimap)
-    const w = (screenWidth / scale.value) * MINIMAP_RATIO;
-    const h = (screenHeight / scale.value) * MINIMAP_RATIO;
-    // Calculate the frame position relative on the minimap center
-    const x = (-translateX.value / scale.value) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
-    const y = (-translateY.value / scale.value) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
-    
-    return {
-      x, y, width: w, height: h
-    };
+  const vX = useDerivedValue(() => {
+    const s = scale.value || 1;
+    const w = ((screenWidth - 100) / s) * MINIMAP_RATIO;
+    const rawX = (-translateX.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
+    return clamp(rawX, 0, MINIMAP_SIZE - w);
   });
-  
+
+  const vY = useDerivedValue(() => {
+    const s = scale.value || 1;
+    const h = (screenHeight / s) * MINIMAP_RATIO;
+    const rawY = (-translateY.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
+    return clamp(rawY, 0, MINIMAP_SIZE - h);
+  });
+
+  const vW = useDerivedValue(() => {
+    const w = (screenWidth / (scale.value || 1)) * MINIMAP_RATIO;
+    return Math.min(w, MINIMAP_SIZE);
+  });
+
+  const vH = useDerivedValue(() => {
+    const h = (screenHeight / (scale.value || 1)) * MINIMAP_RATIO;
+    return Math.min(h, MINIMAP_SIZE);
+  });
+
   const minimapGesture = Gesture.Pan()
     .onUpdate((e) => {
       // To jump to a point on the minimap:
       // We need to convert the click coordinates (0...150) to world coordinates (0...5000)
       // And subtract half the screen so the point is centered
-      const targetWorldX = (e.x / MINIMAP_RATIO) - (WORLD_SIZE / 2);
-      const targetWorldY = (e.y / MINIMAP_RATIO) - (WORLD_SIZE / 2);
+      const clampedX = clamp(e.x, vW.value / 2, MINIMAP_SIZE - vW.value / 2);
+      const clampedY = clamp(e.y, vH.value / 2, MINIMAP_SIZE - vH.value / 2);
+      const targetWorldX = (clampedX / MINIMAP_RATIO) - (WORLD_SIZE / 2);
+      const targetWorldY = (clampedY / MINIMAP_RATIO) - (WORLD_SIZE / 2);
       
       // The scale should only affect the final offset
-      translateX.value = -targetWorldX * scale.value + (screenWidth / 2);
-      translateY.value = -targetWorldY * scale.value + (screenHeight / 2);
+      const nextX = -targetWorldX * scale.value + (screenWidth / 2);
+      const nextY = -targetWorldY * scale.value + (screenHeight / 2);
+      translateX.value = withSpring(nextX);
+      translateY.value = withSpring(nextY);
+      // translateX.value = -targetWorldX * scale.value + (screenWidth / 2);
+      // translateY.value = -targetWorldY * scale.value + (screenHeight / 2);
   });
     // General transformation for the minimap contents (to fit everything within the minimap square)
   const minimapContentTransform = [{ scale: MINIMAP_RATIO }, { translateX: WORLD_SIZE / 2 }, { translateY: WORLD_SIZE / 2 }];
@@ -458,31 +472,13 @@ export default function GraphApp() {
             <Canvas style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }}>
               <Group transform={minimapContentTransform}>
                 {nodes.map(n => (
-                  <MinimapNode 
-                    key={n.id} 
-                    id={n.id} 
-                    store={nodesStore} 
-                    OFF={-10000} 
-                  />
+                  <MinimapNode key={n.id} id={n.id} store={nodesStore} OFF={-10000}/>
                 ))}
                 {links.map((l, i) => (
-                  <MinimapLink 
-                    key={`ml-${i}`} 
-                    fromId={l.from} 
-                    toId={l.to} 
-                    store={nodesStore} 
-                  />
+                  <MinimapLink key={`ml-${i}`} fromId={l.from} toId={l.to} store={nodesStore}/>
                 ))}
               </Group>
-              <Rect
-                x={useDerivedValue(() => viewportRectStyle.value.x)}
-                y={useDerivedValue(() => viewportRectStyle.value.y)}
-                width={useDerivedValue(() => viewportRectStyle.value.width)}
-                height={useDerivedValue(() => viewportRectStyle.value.height)}
-                color="rgba(0, 255, 0, 0.4)"
-                style="stroke"
-                strokeWidth={2}
-              />
+              <Rect x={vX} y={vY} width={vW} height={vH} color="green" style="stroke" strokeWidth={2}/>
             </Canvas>
           </View>
         </GestureDetector>
