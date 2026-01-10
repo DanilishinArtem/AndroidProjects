@@ -44,7 +44,7 @@ class GraphEngineModule(
 
     private fun parseNodeType(raw: String): NodeType {
         return try {
-            NodeType.valueOf(raw.uppercase())
+            NodeType.valueOf(raw.trim().replace(" ", "_").uppercase())
         } catch (e: Exception) {
             throw IllegalArgumentException("Unknown node type: $raw")
         }

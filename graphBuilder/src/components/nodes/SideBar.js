@@ -10,8 +10,8 @@ import {
 
 const CATEGORIES = [
   { title: 'Common', data: ['Code', 'Filter', 'Merge'] },
-  { title: 'Trigger', data: ['Webhook', 'Schedule', 'On_App_Event'] },
-  { title: 'AI', data: ['AI_Agent', 'OpenAI', 'Document_Loader'] },
+  { title: 'Trigger', data: ['Webhook', 'Schedule', 'On App Event'] },
+  { title: 'AI', data: ['AI Agent', 'OpenAI', 'Document Loader'] },
 ];
 
 const SidebarItem = ({ label, onPress }) => (

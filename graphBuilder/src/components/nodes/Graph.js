@@ -184,7 +184,6 @@ export default function GraphApp() {
   }, [nodes, links, nodesStore]);
 
   const runAllGraphs = useCallback(() => {
-    // return;
     if (!nodes || nodes.length === 0) {
       alert('No nodes to run!');
       return;
