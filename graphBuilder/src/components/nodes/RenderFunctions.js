@@ -71,8 +71,8 @@ export const RenderNode = ({ id, store, font, incoming, outgoing }) => {
         <Paint style="stroke" strokeWidth={3} color={strokeColor} />
       </Rect>
       <Group color="white">
-        <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 20)} text={`ID: ${id.slice(-4)}`} />
-        <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 35)} text={useDerivedValue(() => `G_ID: ${graphId.value.slice(-4)}`)} />
+        <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 20)} text={`${store.value[id].type}`} />
+        <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 35)} text={`Id: ${id.slice(-4)}`} />
         <Group color="#aaa">
             <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 55)} text={`In: ${incoming || 'none'}`} />
             <SkiaText font={font} x={useDerivedValue(() => x.value + 8)} y={useDerivedValue(() => y.value + 70)} text={`Out: ${outgoing || 'none'}`} />
@@ -223,5 +223,5 @@ export const styles = StyleSheet.create({
   modalButtons: {flexDirection: 'row', justifyContent: 'space-between'},
   mBtn: {paddingVertical: 10, paddingHorizontal: 30, borderRadius: 10},
   mBtnText: {color: 'white', fontWeight: 'bold'},
-  minimapContainer: {position: 'absolute', bottom: 100, right: 20, width: MINIMAP_SIZE, height: MINIMAP_SIZE, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 8, borderWidth: 1, borderColor: '#555',overflow: 'hidden',}
+  minimapContainer: {position: 'absolute', bottom: 50, right: 20, width: MINIMAP_SIZE, height: MINIMAP_SIZE, backgroundColor: 'rgba(0,0,0,0.7)', borderRadius: 8, borderWidth: 1, borderColor: '#555',overflow: 'hidden',}
 });

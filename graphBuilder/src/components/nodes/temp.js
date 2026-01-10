@@ -1,5 +1,13 @@
 import React, { useState, useMemo, useCallback } from 'react';
-import { View, TouchableOpacity, Text, Platform, useWindowDimensions } from 'react-native';
+import {
+  View,
+  TouchableOpacity,
+  Text,
+  useWindowDimensions,
+  SectionList,
+  TextInput,
+  Platform
+} from 'react-native';
 import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue, clamp, withSpring } from 'react-native-reanimated';
@@ -8,22 +16,112 @@ import {
   MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE,
   RenderMenu, RenderTempLine, RenderLink, RenderNode, MinimapNode, MinimapLink, styles
 } from './RenderFunctions';
-import { Sidebar } from './SideBar';
 import { runOnJS } from 'react-native-worklets';
 import { useDerivedValue } from 'react-native-reanimated';
 
-import { NativeModules } from 'react-native';
-const { GraphEngine } = NativeModules;
+// ------------------------------------------------------------------
+// Sidebar data (configure categories + node types here)
+// ------------------------------------------------------------------
+const CATEGORIES = [
+  { title: 'Common', data: ['Code', 'Filter', 'Merge'] },
+  { title: 'Trigger', data: ['Webhook', 'Schedule', 'On App Event'] },
+  { title: 'AI', data: ['AI Agent', 'OpenAI', 'Document Loader'] },
+];
 
+// Lightweight item renderer for section list
+const SidebarItem = ({ label, onPress }) => (
+  <TouchableOpacity onPress={() => onPress(label)} style={{ padding: 10, borderRadius: 8 }}>
+    <Text style={{ color: '#fff' }}>{label}</Text>
+  </TouchableOpacity>
+);
+
+// Sidebar component — uses SectionList for virtualization (good for many items)
+function Sidebar({ open, onClose, onAddNode }) {
+  const [query, setQuery] = useState('');
+
+  // filter sections by query (simple contains)
+  const sections = useMemo(() => {
+    if (!query) return CATEGORIES;
+    const q = query.toLowerCase();
+    return CATEGORIES.map(s => ({
+      title: s.title,
+      data: s.data.filter(d => d.toLowerCase().includes(q))
+    })).filter(s => s.data.length > 0);
+  }, [query]);
+
+  if (!open) return null;
+
+  return (
+    <View style={{
+      position: 'absolute',
+      left: 0,
+      top: 0,
+      bottom: 0,
+      width: 240,
+      paddingTop: Platform.OS === 'ios' ? 48 : 20,
+      paddingHorizontal: 12,
+      backgroundColor: '#1f2937',
+      zIndex: 2000,
+      shadowColor: '#000',
+      shadowOpacity: 0.25,
+      shadowRadius: 10,
+      elevation: 10
+    }}>
+      <View style={{ flexDirection: 'row', alignItems: 'center', marginBottom: 8 }}>
+        <Text style={{ color: '#fff', fontWeight: '700', flex: 1 }}>Nodes</Text>
+        <TouchableOpacity onPress={onClose} style={{ padding: 6 }}>
+          <Text style={{ color: '#9ca3af' }}>Close</Text>
+        </TouchableOpacity>
+      </View>
+
+      <TextInput
+        placeholder="Search..."
+        placeholderTextColor="#6b7280"
+        value={query}
+        onChangeText={setQuery}
+        style={{
+          height: 36,
+          backgroundColor: '#111827',
+          borderRadius: 8,
+          paddingHorizontal: 10,
+          color: '#fff',
+          marginBottom: 10
+        }}
+      />
+
+      <SectionList
+        sections={sections}
+        keyExtractor={(item, idx) => item + '_' + idx}
+        renderSectionHeader={({ section: { title } }) => (
+          <Text style={{ color: '#9ca3af', marginTop: 8, marginBottom: 6 }}>{title}</Text>
+        )}
+        renderItem={({ item }) => (
+          <SidebarItem label={item} onPress={(label) => onAddNode(label)} />
+        )}
+        stickySectionHeadersEnabled={false}
+        initialNumToRender={10}
+        windowSize={11}
+        style={{ flex: 1 }}
+      />
+    </View>
+  );
+}
+
+// ------------------------------------------------------------------
+// Main GraphApp with left sidebar
+// ------------------------------------------------------------------
 export default function GraphApp() {
   const MINIMAP_RATIO = MINIMAP_SIZE / WORLD_SIZE;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   // React state: lists (lightweight)
-  const [nodes, setNodes] = useState([]); // [{id, graphId, type, category}]
+  const [nodes, setNodes] = useState([]); // [{id, graphId, type?, category?}]
   const [links, setLinks] = useState([]); // [{id, from, to}]
   const [menuVisible, setMenuVisible] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+
+  // Sidebar state
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   // UI-thread shared storage (heavy coords etc)
   const nodesStore = useSharedValue({});
@@ -43,9 +141,6 @@ export default function GraphApp() {
   const savedTranslateY = useSharedValue(0);
   const pinchCenter = useSharedValue({ x: 0, y: 0 });
   const isPinching = useSharedValue(false);
-
-  // SideBar state
-  const [sidebarOpen, setSidebarOpen] = useState(false);
 
   // ---------- Helpers optimized ----------
   // Generating id for a link (stable key)
@@ -81,6 +176,23 @@ export default function GraphApp() {
     setNodes(prev => prev.map(n => (n.graphId === sourceGraphId ? { ...n, graphId: targetGraphId } : n)));
   }, [links, makeLinkId, nodesStore]);
 
+  // addNewNode (center) — kept for compatibility
+  const addNewNode = useCallback(() => {
+    const id = `n_${Date.now()}`;
+    const graphId = `g_${id}`;
+
+    const centerX = (screenWidth / 4 - translateX.value) / scale.value;
+    const centerY = (screenHeight / 4 - translateY.value) / scale.value;
+
+    nodesStore.modify((value) => {
+      'worklet';
+      value[id] = { x: centerX, y: centerY, graphId, isActive: 0 };
+      return value;
+    });
+
+    setNodes(prev => [...prev, { id, graphId }]);
+  }, [screenWidth, screenHeight, nodesStore, translateX, translateY, scale]);
+
   // addNodeOfType: create a node with a specific type & optional category
   const addNodeOfType = useCallback((type, category = null) => {
     const id = `n_${Date.now()}`;
@@ -98,7 +210,7 @@ export default function GraphApp() {
     setNodes(prev => [...prev, { id, graphId, type, category }]);
 
     // close sidebar on mobile for convenience
-    setSidebarOpen(false);
+    if (Platform.OS !== 'web') setSidebarOpen(false);
   }, [screenWidth, screenHeight, nodesStore, translateX, translateY, scale]);
 
   // recalculateGraphIds: Now it's O(N + L) — Throughput building maps for fast BFS
@@ -182,39 +294,6 @@ export default function GraphApp() {
       console.error('Error saving graph', e);
     }
   }, [nodes, links, nodesStore]);
-
-  const runAllGraphs = useCallback(() => {
-    // return;
-    if (!nodes || nodes.length === 0) {
-      alert('No nodes to run!');
-      return;
-    }
-
-    // Получаем уникальные графы по graphId
-    const graphIds = Array.from(new Set(nodes.map(n => n.graphId)));
-
-    graphIds.forEach(graphId => {
-      const graphNodes = nodes.filter(n => n.graphId === graphId);
-      const graphLinks = links.filter(l =>
-        graphNodes.some(n => n.id === l.from) &&
-        graphNodes.some(n => n.id === l.to)
-      );
-
-      // Находим стартовую ноду — у которой нет входящих ссылок
-      const incomingNodeIds = new Set(graphLinks.map(l => l.to));
-      const startNode = graphNodes.find(n => !incomingNodeIds.has(n.id));
-
-      if (!startNode) {
-        console.warn(`No start node found in graph ${graphId}`);
-        return;
-      }
-
-      // Запускаем граф
-      GraphEngine.runGraph(JSON.stringify({ nodes: graphNodes, links: graphLinks }), startNode.id)
-        .then(result => console.log(`Graph ${graphId} executed:`, result))
-        .catch(err => console.error(`Error executing graph ${graphId}:`, err));
-    });
-  }, [nodes, links]);
 
   const loadGraph = useCallback(async () => {
     try {
@@ -482,9 +561,6 @@ export default function GraphApp() {
 
         {/* Top menu buttons */}
         <View style={[styles.menu, { marginLeft: sidebarOpen ? 240 : 0 }]}> 
-          <TouchableOpacity style={styles.menuBtn} onPress={runAllGraphs}>
-            <Text style={styles.menuText}>RUN</Text>
-          </TouchableOpacity>
           <TouchableOpacity style={styles.menuBtn} onPress={saveGraph}>
             <Text style={styles.menuText}>SAVE</Text>
           </TouchableOpacity>
@@ -523,7 +599,7 @@ export default function GraphApp() {
         </GestureDetector>
 
         <GestureDetector gesture={minimapGesture}>
-          <View style={styles.minimapContainer}>
+          <View style={[styles.minimapContainer, { right: 12 }]}> {/* keep minimap on right */}
             <Canvas style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }}>
               <Group transform={minimapContentTransform}>
                 {nodes.map(n => <MinimapNode key={n.id} id={n.id} store={nodesStore} OFF={-10000} />)}
@@ -533,6 +609,10 @@ export default function GraphApp() {
             </Canvas>
           </View>
         </GestureDetector>
+
+        <TouchableOpacity style={[styles.btn, { right: 16 }]} onPress={addNewNode}>
+          <Text style={{ color: '#fff', fontWeight: 'bold' }}>+ ADD NODE</Text>
+        </TouchableOpacity>
 
       </View>
     </GestureHandlerRootView>
