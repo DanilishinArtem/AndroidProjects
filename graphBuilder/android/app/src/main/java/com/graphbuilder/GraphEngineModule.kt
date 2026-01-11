@@ -18,7 +18,6 @@ class GraphEngineModule(
     @ReactMethod
     fun runGraph(
         graphJson: String,
-        startNodeId: String,
         promise: Promise
     ) {
         executorService.execute {
@@ -26,13 +25,9 @@ class GraphEngineModule(
                 // 1. Parse graph
                 val graph = parseGraph(graphJson)
 
-                if (!graph.containsKey(startNodeId)) {
-                    throw IllegalArgumentException("Start node '$startNodeId' not found")
-                }
-
                 // 2. Execute graph
                 val executor = GraphExecutor(graph)
-                executor.start(startNodeId)
+                executor.start()
 
                 // 3. Resolve promise
                 promise.resolve("Graph executed successfully")

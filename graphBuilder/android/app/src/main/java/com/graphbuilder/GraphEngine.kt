@@ -9,6 +9,8 @@ enum class NodeType {
     CODE,
     FILTER,
     MERGE,
+    FLASH_LIGHT,
+    VIBRATION,
     WEBHOOK,
     SCHEDULE,
     ON_APP_EVENT,
@@ -50,6 +52,20 @@ class MergeNode: ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "MergeNode executed with input: $input")
         return Message(mapOf("From" to "MergeNode"))
+    }
+}
+
+class FlashLightNode: ExecutableNode {
+    override fun execute(input: Message): Message {
+        Log.d("GraphEngine", "FlashLightNode executed with input: $input")
+        return Message(mapOf("From" to "FlashLightNode"))
+    }
+}
+
+class VibrationNode: ExecutableNode {
+    override fun execute(input: Message): Message {
+        Log.d("GraphEngine", "VibrationNode executed with input: $input")
+        return Message(mapOf("From" to "VibrationNode"))
     }
 }
 
@@ -102,6 +118,8 @@ object NodeFactory {
             NodeType.CODE -> CodeNode()
             NodeType.FILTER -> FilterNode()
             NodeType.MERGE -> MergeNode()
+            NodeType.FLASH_LIGHT -> FlashLightNode()
+            NodeType.VIBRATION -> VibrationNode()
             NodeType.WEBHOOK -> WebhookNode()
             NodeType.SCHEDULE -> ScheduleNode()
             NodeType.ON_APP_EVENT -> OnAppEventNode()
@@ -113,13 +131,12 @@ object NodeFactory {
 
 
 // Graph Engine ------------->
-
 class GraphExecutor(
     private val nodes: Map<String, Node>
 ) {
     private val executors: Map<String, ExecutableNode> = nodes.mapValues { NodeFactory.create(it.value.type) }
 
-    fun start(startNodeId: String?) {
+    fun start() {
         // incomingMessages: nodeId -> list of (fromNodeId, Message)
         val incomingMessages = mutableMapOf<String, MutableList<Pair<String, Message>>>()
 
@@ -131,7 +148,9 @@ class GraphExecutor(
             }
         }
 
+        // readyQueue: nodes ready to process
         val readyQueue = ArrayDeque<String>()
+        // queued: nodes that are being processed or in the queue
         val queued = mutableSetOf<String>()
 
         // source nodes (no incoming) -> enqueue
@@ -140,12 +159,6 @@ class GraphExecutor(
                 readyQueue.add(nodeId)
                 queued.add(nodeId)
             }
-        }
-
-        // fallback
-        if (readyQueue.isEmpty() && startNodeId != null && nodes.containsKey(startNodeId)) {
-            readyQueue.add(startNodeId)
-            queued.add(startNodeId)
         }
 
         val processed = mutableSetOf<String>()
@@ -162,25 +175,25 @@ class GraphExecutor(
             val incoming = incomingNodes[nodeId] ?: emptyList()
             val messages = incomingMessages[nodeId] ?: emptyList()
 
-            // Ждём сообщений от всех входящих нод
+            // Wait for messages from all incoming nodes
             if (messages.size < incoming.size) {
-                // ещё не все сообщения пришли — отложить в конец очереди
+                // if some messages are missing, delay processing to the end of the queue
                 readyQueue.addLast(nodeId)
                 queued.add(nodeId)
                 continue
             }
 
-            // Мердж: теперь messages содержит пары (fromId, Message)
+            // Merge messages: message contrains pairs of (fromNodeId, Message)
+            // List<Pair<fromNodeId, Message>>
             val mergedMessage = mergeMessagesWithSources(messages)
-            // val mergedMessage = mergedMessage(messages)
 
             val output = executor.execute(mergedMessage)
             processed.add(nodeId)
 
-            // Отправляем output всем выходам — помечая источник (this nodeId)
+            // Pass output to all outputs — marking the source (this nodeId)
             node.outputs.forEach { nextId ->
                 val list = incomingMessages.getOrPut(nextId) { mutableListOf() }
-                // сохраняем pair: from=this nodeId, message=output
+                // save pair: from=this nodeId, message=output
                 list.add(nodeId to output)
 
                 val nextIncoming = incomingNodes[nextId] ?: emptyList()
@@ -192,17 +205,6 @@ class GraphExecutor(
         }
     }
 
-    private fun mergeMessages(messages: List<Message>): Message {
-        val merged = mutableMapOf<String, Any?>()
-        messages.forEach { msg -> merged.putAll(msg.payload) }
-        return Message(merged)
-    }
-
-    /**
-     * Создаёт Message, которая содержит:
-     *  - inputs: Map<fromNodeId, payloadMap>
-     *  - flat keys: старая плоская map, но при конфликте значений превращает значение в List<Any?>
-     */
     private fun mergeMessagesWithSources(pairs: List<Pair<String, Message>>): Message {
         val inputsMap = mutableMapOf<String, Map<String, Any?>>()
         val flat = mutableMapOf<String, Any?>()
@@ -210,7 +212,7 @@ class GraphExecutor(
         for ((fromId, msg) in pairs) {
             inputsMap[fromId] = msg.payload
 
-            // merge flat: если ключа нет — поставить; если есть и не список — превратить в список; если список — добавить
+            // merge flat: if key doesn't exist, put; if not list, convert to list; if list, add
             for ((k, v) in msg.payload) {
                 if (!flat.containsKey(k)) {
                     flat[k] = v
@@ -218,12 +220,12 @@ class GraphExecutor(
                     val existing = flat[k]
                     when (existing) {
                         is MutableList<*> -> {
-                            // уже список — добавить новое значение
+                            // already a list - add new value
                             @Suppress("UNCHECKED_CAST")
                             (existing as MutableList<Any?>).add(v)
                         }
                         else -> {
-                            // превратить в список из двух элементов
+                            // transform to list of two elements
                             val newList = mutableListOf(existing, v)
                             flat[k] = newList
                         }
@@ -232,11 +234,10 @@ class GraphExecutor(
             }
         }
 
-        // Помещаем inputsMap под ключ "inputs" в плоскую карту, но можно поменять название
+        // Add inputs map under "inputs" key in the flat map, but can change the name
         val finalPayload = mutableMapOf<String, Any?>()
         finalPayload.putAll(flat)
         // finalPayload["inputs"] = inputsMap
-
         return Message(finalPayload)
     }
 }

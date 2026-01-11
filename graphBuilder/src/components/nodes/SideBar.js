@@ -10,6 +10,7 @@ import {
 
 const CATEGORIES = [
   { title: 'Common', data: ['Code', 'Filter', 'Merge'] },
+  { title: 'Events', data: ['Flash Light', 'Vibration'] },
   { title: 'Trigger', data: ['Webhook', 'Schedule', 'On App Event'] },
   { title: 'AI', data: ['AI Agent', 'OpenAI', 'Document Loader'] },
 ];

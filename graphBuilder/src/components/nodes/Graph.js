@@ -189,7 +189,7 @@ export default function GraphApp() {
       return;
     }
 
-    // Получаем уникальные графы по graphId
+    // Get unique graphIds
     const graphIds = Array.from(new Set(nodes.map(n => n.graphId)));
 
     graphIds.forEach(graphId => {
@@ -198,18 +198,9 @@ export default function GraphApp() {
         graphNodes.some(n => n.id === l.from) &&
         graphNodes.some(n => n.id === l.to)
       );
-
-      // Находим стартовую ноду — у которой нет входящих ссылок
-      const incomingNodeIds = new Set(graphLinks.map(l => l.to));
-      const startNode = graphNodes.find(n => !incomingNodeIds.has(n.id));
-
-      if (!startNode) {
-        console.warn(`No start node found in graph ${graphId}`);
-        return;
-      }
-
-      // Запускаем граф
-      GraphEngine.runGraph(JSON.stringify({ nodes: graphNodes, links: graphLinks }), startNode.id)
+      
+      // Run graph
+      GraphEngine.runGraph(JSON.stringify({ nodes: graphNodes, links: graphLinks }))
         .then(result => console.log(`Graph ${graphId} executed:`, result))
         .catch(err => console.error(`Error executing graph ${graphId}:`, err));
     });
