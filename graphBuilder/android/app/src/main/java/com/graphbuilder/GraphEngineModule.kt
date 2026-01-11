@@ -7,7 +7,7 @@ import java.util.concurrent.Executors
 import android.util.Log
 
 class GraphEngineModule(
-    reactContext: ReactApplicationContext
+    private val reactContext: ReactApplicationContext
 ) : ReactContextBaseJavaModule(reactContext) {
 
     private val executorService = Executors.newSingleThreadExecutor()
@@ -26,7 +26,7 @@ class GraphEngineModule(
                 val graph = parseGraph(graphJson)
 
                 // 2. Execute graph
-                val executor = GraphExecutor(graph)
+                val executor = GraphExecutor(context = reactContext.applicationContext, nodes = graph)
                 executor.start()
 
                 // 3. Resolve promise

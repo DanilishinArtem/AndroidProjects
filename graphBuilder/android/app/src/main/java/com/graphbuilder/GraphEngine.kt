@@ -5,6 +5,16 @@ import java.util.Deque
 import java.util.Queue
 import java.util.ArrayDeque
 
+import android.content.Context
+import android.hardware.camera2.CameraManager
+import android.hardware.camera2.CameraCharacteristics
+import android.os.Build
+import android.os.Vibrator
+import android.os.VibrationEffect
+import android.os.VibratorManager
+import androidx.core.app.ActivityCompat
+import androidx.core.content.ContextCompat
+
 enum class NodeType {
     CODE,
     FILTER,
@@ -34,77 +44,149 @@ interface ExecutableNode {
 }
 
 // Node implementations would go here, e.g., CodeNode, TriggerNode, etc.
-class CodeNode: ExecutableNode {
+class CodeNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "CodeNode executed with input: $input")
         return Message(mapOf("From" to "CodeNode"))
     }
 }
 
-class FilterNode: ExecutableNode {
+class FilterNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "FilterNode executed with input: $input")
         return Message(mapOf("From" to "FilterNode"))
     }
 }
 
-class MergeNode: ExecutableNode {
+class MergeNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "MergeNode executed with input: $input")
         return Message(mapOf("From" to "MergeNode"))
     }
 }
 
-class FlashLightNode: ExecutableNode {
+class FlashLightNode(
+    private val context: Context
+) : ExecutableNode {
+
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "FlashLightNode executed with input: $input")
+
+        val cameraManager =
+            context.getSystemService(Context.CAMERA_SERVICE) as CameraManager
+
+        try {
+            val cameraId = cameraManager.cameraIdList.firstOrNull { id ->
+                val characteristics = cameraManager.getCameraCharacteristics(id)
+                characteristics.get(CameraCharacteristics.FLASH_INFO_AVAILABLE) == true
+            }
+
+            if (cameraId != null) {
+                cameraManager.setTorchMode(cameraId, true)
+                Log.d("GraphEngine", "Flashlight turned ON")
+                cameraManager.setTorchMode(cameraId, false)
+            } else {
+                Log.e("GraphEngine", "No flashlight available")
+            }
+        } catch (e: Exception) {
+            Log.e("GraphEngine", "Failed to enable flashlight", e)
+        }
+        
         return Message(mapOf("From" to "FlashLightNode"))
     }
 }
 
-class VibrationNode: ExecutableNode {
+class VibrationNode(
+    private val context: Context
+) : ExecutableNode {
+
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "VibrationNode executed with input: $input")
+
+        try {
+            val vibrator = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+                val manager =
+                    context.getSystemService(Context.VIBRATOR_MANAGER_SERVICE) as VibratorManager
+                manager.defaultVibrator
+            } else {
+                context.getSystemService(Context.VIBRATOR_SERVICE) as Vibrator
+            }
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                vibrator.vibrate(
+                    VibrationEffect.createOneShot(
+                        300,
+                        VibrationEffect.DEFAULT_AMPLITUDE
+                    )
+                )
+            } else {
+                @Suppress("DEPRECATION")
+                vibrator.vibrate(300)
+            }
+
+            Log.d("GraphEngine", "Vibration triggered")
+        } catch (e: Exception) {
+            Log.e("GraphEngine", "Failed to vibrate", e)
+        }
+
         return Message(mapOf("From" to "VibrationNode"))
     }
 }
 
-class WebhookNode: ExecutableNode {
+class WebhookNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "WebhookNode executed with input: $input")
         return Message(mapOf("From" to "WebhookNode"))
     }
 }
 
-class ScheduleNode: ExecutableNode {
+class ScheduleNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "ScheduleNode executed with input: $input")
         return Message(mapOf("From" to "ScheduleNode"))
     }
 }
 
-class OnAppEventNode: ExecutableNode {
+class OnAppEventNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "OnAppEventNode executed with input: $input")
         return Message(mapOf("From" to "OnAppEventNode"))
     }
 }
 
-class AiAgentNode: ExecutableNode {
+class AiAgentNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "AiAgentNode executed with input: $input")
         return Message(mapOf("From" to "AiAgentNode"))
     }
 }
 
-class OpenAINode: ExecutableNode {
+class OpenAINode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "OpenAINode executed with input: $input")
         return Message(mapOf("From" to "OpenAINode"))
     }
 }
 
-class DocumentLoaderNode: ExecutableNode {
+class DocumentLoaderNode(
+    private val context: Context
+): ExecutableNode {
     override fun execute(input: Message): Message {
         Log.d("GraphEngine", "DocumentLoaderNode executed with input: $input")
         return Message(mapOf("From" to "DocumentLoaderNode"))
@@ -112,29 +194,31 @@ class DocumentLoaderNode: ExecutableNode {
 }
 
 // Node Factory ------------->
-object NodeFactory {
+class NodeFactory(private val context: Context) {
     fun create(type: NodeType): ExecutableNode =
         when (type) {
-            NodeType.CODE -> CodeNode()
-            NodeType.FILTER -> FilterNode()
-            NodeType.MERGE -> MergeNode()
-            NodeType.FLASH_LIGHT -> FlashLightNode()
-            NodeType.VIBRATION -> VibrationNode()
-            NodeType.WEBHOOK -> WebhookNode()
-            NodeType.SCHEDULE -> ScheduleNode()
-            NodeType.ON_APP_EVENT -> OnAppEventNode()
-            NodeType.AI_AGENT -> AiAgentNode()
-            NodeType.OPENAI -> OpenAINode()
-            NodeType.DOCUMENT_LOADER -> DocumentLoaderNode()
+            NodeType.CODE -> CodeNode(context)
+            NodeType.FILTER -> FilterNode(context)
+            NodeType.MERGE -> MergeNode(context)
+            NodeType.FLASH_LIGHT -> FlashLightNode(context)
+            NodeType.VIBRATION -> VibrationNode(context)
+            NodeType.WEBHOOK -> WebhookNode(context)
+            NodeType.SCHEDULE -> ScheduleNode(context)
+            NodeType.ON_APP_EVENT -> OnAppEventNode(context)
+            NodeType.AI_AGENT -> AiAgentNode(context)
+            NodeType.OPENAI -> OpenAINode(context)
+            NodeType.DOCUMENT_LOADER -> DocumentLoaderNode(context)
         }
 }
 
 
 // Graph Engine ------------->
 class GraphExecutor(
+    private val context: Context,
     private val nodes: Map<String, Node>
 ) {
-    private val executors: Map<String, ExecutableNode> = nodes.mapValues { NodeFactory.create(it.value.type) }
+    private val nodeFactory = NodeFactory(context)
+    private val executors: Map<String, ExecutableNode> = nodes.mapValues { nodeFactory.create(it.value.type) }
 
     fun start() {
         // incomingMessages: nodeId -> list of (fromNodeId, Message)
