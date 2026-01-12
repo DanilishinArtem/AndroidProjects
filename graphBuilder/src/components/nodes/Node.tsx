@@ -21,6 +21,7 @@ export interface NodeData {
   color: string;
   inputCount: number;
   outputCount: number;
+  additionalCount: number;
   x: SharedValue<number>;
   y: SharedValue<number>;
   width: number;  // Предварительно рассчитанная ширина
@@ -28,11 +29,13 @@ export interface NodeData {
   // Относительные координаты (offset)
   inputPorts: { x: number; y: number }[];
   outputPorts: { x: number; y: number }[];
+  additionalPorts: {x: number; y: number}[];
 }
 
 export const createNode = (data: any): NodeData => {
   const w = Math.max(Math.max(data.inputCount, data.outputCount) * PORT_SPACING, NODE_MIN_WIDTH);
-  const h = NODE_MIN_HEIGHT;
+  const h = Math.max(data.additionalCount * PORT_SPACING, NODE_MIN_HEIGHT)
+  // const h = NODE_MIN_HEIGHT;
 
   // Рассчитываем позиции портов ОДИН раз при создании
   const inputPorts = Array.from({ length: data.inputCount }).map((_, i) => ({
@@ -45,11 +48,16 @@ export const createNode = (data: any): NodeData => {
     y: h
   }));
 
-  return { ...data, width: w, height: h, inputPorts: inputPorts, outputPorts: outputPorts };
+  const additionalPorts = Array.from({ length: data.additionalCount }).map((_, i) => ({
+    x: 0,
+    y: (h / (data.additionalCount + 1)) * (i + 1)
+  }));
+
+  return { ...data, width: w, height: h, inputPorts: inputPorts, outputPorts: outputPorts, additionalPorts: additionalPorts };
 };
 
 export const NodeView: React.FC<{ node: NodeData; font: any, iconFont: any }> = ({ node, font, iconFont }) => {
-  const { x, y, width: w, height: h, inputPorts, outputPorts } = node;
+  const { x, y, width: w, height: h, inputPorts, outputPorts, additionalPorts } = node;
   const transform = useDerivedValue(() => [
     { translateX: x.value },
     { translateY: y.value },
@@ -78,6 +86,7 @@ export const NodeView: React.FC<{ node: NodeData; font: any, iconFont: any }> = 
         />
       )}
 
+      {/* Input ports */}
       {inputPorts.map((port, i) => (
         <Circle
           key={`in-${i}`}
@@ -90,8 +99,21 @@ export const NodeView: React.FC<{ node: NodeData; font: any, iconFont: any }> = 
         </Circle>
       ))}
 
-      {/* Выходные порты */}
+      {/* Output ports */}
       {outputPorts.map((port, i) => (
+        <Circle
+          key={`out-${i}`}
+          cx={port.x}
+          cy={port.y}
+          r={PORT_RADIUS}
+          color="#ffffff"
+        >
+          <Paint style="stroke" strokeWidth={2} color="#727272" />
+        </Circle>
+      ))}
+
+      {/* Additional ports */}
+      {additionalPorts.map((port, i) => (
         <Circle
           key={`out-${i}`}
           cx={port.x}

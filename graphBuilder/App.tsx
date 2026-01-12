@@ -21,6 +21,7 @@ const App = () => {
       color: '#ffffff',
       inputCount: 2,
       outputCount: 1,
+      additionalCount: 3,
       x: x1,
       y: y1,
     }),
