@@ -3,9 +3,17 @@ import { Group, Rect, Circle, Paint, Text as SkiaText } from '@shopify/react-nat
 import { SharedValue, useDerivedValue } from 'react-native-reanimated';
 
 const ICONS: Record<string, string> = {
-  'flashlight': '\uF244',
   'code': '\uF169',
-  'settings': '\uF493',
+  'filter': '\uF232',
+  'merge': '\uF62D',
+  'flashlight': '\uF244',
+  'vibration': '\uF566',
+  'webhook': '\uF62F',
+  'schedule': '\uF150',
+  'on_app_event': '\uF614',
+  'ai_agent': '\uF004',
+  'openai': '\uF487',
+  'document_loader': '\uF21A',
 };
 
 // Константы выносим за пределы компонента
@@ -17,6 +25,7 @@ const NODE_MIN_HEIGHT = 80;
 export interface NodeData {
   nodeId: string;
   graphId: string;
+  desc: string;
   label: string;
   color: string;
   inputCount: number;
@@ -57,13 +66,13 @@ export const createNode = (data: any): NodeData => {
 };
 
 export const NodeView: React.FC<{ node: NodeData; font: any, iconFont: any }> = ({ node, font, iconFont }) => {
-  const { x, y, width: w, height: h, inputPorts, outputPorts, additionalPorts } = node;
+  const { x, y, width: w, height: h, desc: desc, inputPorts, outputPorts, additionalPorts } = node;
   const transform = useDerivedValue(() => [
     { translateX: x.value },
     { translateY: y.value },
   ]);
   // 1. Оптимизация метрик иконки: считаем один раз при смене иконки/шрифта
-  const iconName = ICONS[node.label.toLowerCase()] || ICONS['code'];
+  const iconName = ICONS[node.label];
   const iconMetrics = useMemo(() => {
     return iconFont ? iconFont.measureText(iconName) : { width: 0, height: 0, x: 0, y: 0 };
   }, [iconFont, iconName]);
@@ -124,6 +133,18 @@ export const NodeView: React.FC<{ node: NodeData; font: any, iconFont: any }> = 
           <Paint style="stroke" strokeWidth={2} color="#727272" />
         </Circle>
       ))}
+
+      {font && desc && (
+              <SkiaText
+                font={font}
+                // Центрируем текст по горизонтали: (ширина ноды / 2) - (ширина текста / 2)
+                x={0}
+                // Смещаем вниз: высота ноды + отступ (например, 15px)
+                y={h+20}
+                text={desc}
+                color="black" // Цвет текста под нодой (обычно белый или серый для темных тем)
+              />
+            )}
     </Group>
   );
 };

@@ -1,41 +1,58 @@
-// const CATEGORIES = [
-//     { title: 'Common', data: ['Code', 'Filter', 'Merge'] },
-//     { title: 'Events', data: ['Flash Light', 'Vibration'] },
-//     { title: 'Trigger', data: ['Webhook', 'Schedule', 'On App Event'] },
-//     { title: 'AI', data: ['AI Agent', 'OpenAI', 'Document Loader'] },
-//   ];
-
-import {} from './Node'
+import { createNode, NodeData, NodeView } from './Node'
+import { SharedValue } from 'react-native-reanimated';
 
 
 // Типы нод, которые есть в твоем приложении
-export type NodeType = 'code' | 'filter' | 'merge' | 'flashlight' | 'vibration' | 'webhook' | 'schedule' | 'on_app_event' | 'ai_agent' | 'openAI' | 'document_loader';
+export type NodeType = 'Code' | 'Filter' | 'Merge' | 'FlashLight' | 'Vibration' | 'Webhook' | 'Schedule' | 'On App Event' | 'AI Agent' | 'OpenAI' | 'Document Loader';
 
 interface NodeDefinition {
   label: string;
   color: string;
   inputCount: number;
   outputCount: number;
+  additionalCount: number;
 }
 
 // Реестр настроек нод
 const NODE_DEFINITIONS: Record<NodeType, NodeDefinition> = {
-    code: {label: 'Code', color: '#ffffff', inputCount: 1, outputCount: 1},
-    filter: {label: 'Filter', color: '#ffffff', inputCount: 1, outputCount: 1},
-    merge: {label: 'Merge', color: '#ffffff', inputCount: 5, outputCount: 1},
-    flashlight: {label: 'Flash Light', color: '#ffffff', inputCount: 1, outputCount: 1},
-    vibration: {label: 'Vibration', color: '#ffffff', inputCount: 1, outputCount: 1},
-    webhook: {label: 'Webhook', color: '#ffffff', inputCount: 1, outputCount: 1},
-    schedule: {label: 'Schedule', color: '#ffffff', inputCount: 0, outputCount: 1},
-    on_app_event: {label: 'On App Event', color: '#ffffff', inputCount: 1, outputCount: 1},
-    ai_agent: {label: 'AI Agent', color: '#ffffff', inputCount: 0, outputCount: 1},
-    openAI: {label: 'openAI', color: '#ffffff', inputCount: 0, outputCount: 1},
-    document_loader: {label: 'Document Loader', color: '#ffffff', inputCount: 0, outputCount: 1},
-
-
-//   trigger: { label: 'Code', color: '#ffcc00', inputCount: 0, outputCount: 1 },
-//   action: { label: 'Settings', color: '#44ff44', inputCount: 1, outputCount: 1 },
-//   flashlight: { label: 'Flashlight', color: '#ffffff', inputCount: 1, outputCount: 0 },
-//   logic: { label: 'Code', color: '#ff4444', inputCount: 2, outputCount: 1 },
-//   settings: { label: 'Settings', color: '#aaaaaa', inputCount: 1, outputCount: 1 },
+    'Code': {label: 'code', color: '#ffffff', inputCount: 1, outputCount: 1, additionalCount: 0},
+    'Filter': {label: 'filter', color: '#ffffff', inputCount: 1, outputCount: 1, additionalCount: 0},
+    'Merge': {label: 'merge', color: '#ffffff', inputCount: 2, outputCount: 1, additionalCount: 0},
+    'FlashLight': {label: 'flashlight', color: '#ffffff', inputCount: 1, outputCount: 1, additionalCount: 0},
+    'Vibration': {label: 'vibration', color: '#ffffff', inputCount: 1, outputCount: 1, additionalCount: 0},
+    'Webhook': {label: 'webhook', color: '#ffffff', inputCount: 0, outputCount: 1, additionalCount: 0},
+    'Schedule': {label: 'schedule', color: '#ffffff', inputCount: 0, outputCount: 1, additionalCount: 0},
+    'On App Event': {label: 'on_app_event', color: '#ffffff', inputCount: 0, outputCount: 1, additionalCount: 0},
+    'AI Agent': {label: 'ai_agent', color: '#ffffff', inputCount: 1, outputCount: 1, additionalCount: 3},
+    'OpenAI': {label: 'openAI', color: '#ffffff', inputCount: 1, outputCount: 1, additionalCount: 1},
+    'Document Loader': {label: 'document_loader', color: '#ffffff', inputCount: 0, outputCount: 1, additionalCount: 0},
 };
+
+export const nodeFactory = (
+    type: NodeType,
+    nodeId: string,
+    graphId: string,
+    x: SharedValue<number>,
+    y: SharedValue<number>
+  ): NodeData => {
+    const def = NODE_DEFINITIONS[type];
+
+    // Вызываем твою функцию createNode, передавая параметры из реестра
+    return createNode({
+      nodeId,
+      graphId,
+      desc: type,
+      label: def.label.trim().toLowerCase().replace(/\s+/g, '_'),
+      color: def.color,
+      inputCount: def.inputCount,
+      outputCount: def.outputCount,
+      additionalCount: def.additionalCount,
+      x,
+      y,
+    });
+  };
+
+  export const NodeRenderer: React.FC<{ node: NodeData; font: any, iconFont: any }> = (props) => {
+    // Сейчас у нас один тип визуализации, но в будущем здесь может быть switch(node.type)
+    return <NodeView {...props} />;
+  };
