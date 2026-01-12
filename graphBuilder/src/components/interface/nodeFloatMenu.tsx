@@ -28,7 +28,7 @@ export const NodeMenuOverlay: React.FC<MenuOverlayProps> = ({ visible, x, y, wid
       {icons.map((icon) => (
         <TouchableOpacity key={icon.action} onPress={() => onAction(icon.action)} style={styles.iconButton}>
           {/* Используем библиотеку react-native-vector-icons для нативных иконок */}
-          <Icon name={icon.name} size={24} color="#FFFFFF" />
+          <Icon name={icon.name} size={13} color="#FFFFFF" />
         </TouchableOpacity>
       ))}
     </View>

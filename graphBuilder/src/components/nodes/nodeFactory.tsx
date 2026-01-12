@@ -52,7 +52,7 @@ export const nodeFactory = (
     });
   };
 
-  export const NodeRenderer: React.FC<{ node: NodeData; font: any, iconFont: any }> = (props) => {
+  export const NodeRenderer: React.FC<{ id: string; store: any, font: any, iconFont: any }> = (props) => {
     // Сейчас у нас один тип визуализации, но в будущем здесь может быть switch(node.type)
     return <NodeView {...props} />;
   };

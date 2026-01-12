@@ -21,6 +21,7 @@ const PORT_RADIUS = 6;
 const PORT_SPACING = 20;
 const NODE_MIN_WIDTH = 80;
 const NODE_MIN_HEIGHT = 80;
+const OFF = -10000;
 
 export interface NodeData {
   nodeId: string;
@@ -65,14 +66,22 @@ export const createNode = (data: any): NodeData => {
   return { ...data, width: w, height: h, inputPorts: inputPorts, outputPorts: outputPorts, additionalPorts: additionalPorts };
 };
 
-export const NodeView: React.FC<{ node: NodeData; font: any, iconFont: any }> = ({ node, font, iconFont }) => {
-  const { x, y, width: w, height: h, desc: desc, inputPorts, outputPorts, additionalPorts } = node;
-  const transform = useDerivedValue(() => [
-    { translateX: x.value },
-    { translateY: y.value },
-  ]);
-  // 1. Оптимизация метрик иконки: считаем один раз при смене иконки/шрифта
-  const iconName = ICONS[node.label];
+export const NodeView: React.FC<{ id: string; store: any; font: any, iconFont: any }> = ({ id, store, font, iconFont }) => {
+  const nodeData: NodeData = store.value[id];
+  if (!nodeData) return null;
+  const { width: w, height: h, label, desc, inputPorts, outputPorts, additionalPorts, color } = nodeData;
+  const transform = useDerivedValue(() => {
+    const node = store.value[id];
+    if (!node) return [{ translateX: OFF }, { translateY: OFF }];
+    
+
+    return [
+      { translateX: node.x.value },
+      { translateY: node.y.value },
+    ];
+  });
+
+  const iconName = ICONS[label];
   const iconMetrics = useMemo(() => {
     return iconFont ? iconFont.measureText(iconName) : { width: 0, height: 0, x: 0, y: 0 };
   }, [iconFont, iconName]);
@@ -80,7 +89,7 @@ export const NodeView: React.FC<{ node: NodeData; font: any, iconFont: any }> = 
   return (
     <Group transform={transform}>
       {/* Тело ноды теперь рисуем в 0,0 */}
-      <Rect x={0} y={0} width={w} height={h} r={10} color={node.color}>
+      <Rect x={0} y={0} width={w} height={h} r={10} color={color}>
         <Paint style="stroke" strokeWidth={2} color="#727272" />
       </Rect>
 

@@ -22,10 +22,10 @@
 
 //   const startDragOffset = useSharedValue({x: 0, y: 0});
 // // flashlight, 
-//   const nodes = useMemo(() => [
-//     nodeFactory('AI Agent', 'node_1', 'graph_1', x1, y1),
-//     nodeFactory('OpenAI', 'node_2', 'graph_1', x2, y2),
-//   ], []);
+  // const nodes = useMemo(() => [
+  //   nodeFactory('AI Agent', 'node_1', 'graph_1', x1, y1),
+  //   nodeFactory('OpenAI', 'node_2', 'graph_1', x2, y2),
+  // ], []);
 
 //   if (!font || !iconFont) return null;
 
@@ -73,36 +73,36 @@
 
 //     });
 
-//   const handleMenuAction = (action: string) => {
-//     console.log(`Action: ${action} for node: ${activeMenu?.nodeId}`);
-//     setActiveMenu(null);
-//   };
+  // const handleMenuAction = (action: string) => {
+  //   console.log(`Action: ${action} for node: ${activeMenu?.nodeId}`);
+  //   setActiveMenu(null);
+  // };
 
 //   return (
 //     <GestureHandlerRootView style={{ flex: 1 }}>
 //       <View style={styles.container}>
 //         <GestureDetector gesture={tapGesture}>
 //           <Canvas style={styles.canvas}>
-//             {nodes.map(node => (
-//               <NodeRenderer 
-//                 key={node.nodeId} 
-//                 node={node} 
-//                 font={font} 
-//                 iconFont={iconFont} 
-//               />
-//             ))}
+            // {nodes.map(node => (
+            //   <NodeRenderer 
+            //     key={node.nodeId} 
+            //     node={node} 
+            //     font={font} 
+            //     iconFont={iconFont} 
+            //   />
+            // ))}
 //           </Canvas>
 //         </GestureDetector>
         
-//         {activeMenu && (
-//           <NodeMenuOverlay
-//             visible={!!activeMenu}
-//             x={activeMenu.x}
-//             y={activeMenu.y}
-//             width={activeMenu.width}
-//             onAction={handleMenuAction}
-//           />
-//         )}
+        // {activeMenu && (
+        //   <NodeMenuOverlay
+        //     visible={!!activeMenu}
+        //     x={activeMenu.x}
+        //     y={activeMenu.y}
+        //     width={activeMenu.width}
+        //     onAction={handleMenuAction}
+        //   />
+        // )}
 //       </View>
 //     </GestureHandlerRootView>
 //   );
