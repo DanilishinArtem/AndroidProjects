@@ -115,7 +115,6 @@
 
 // export default App;
 
-
 import React from 'react';
 import { StyleSheet, View, StatusBar } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';

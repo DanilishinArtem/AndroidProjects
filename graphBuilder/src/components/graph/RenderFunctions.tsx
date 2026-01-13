@@ -5,72 +5,105 @@ import { useDerivedValue } from 'react-native-reanimated';
 import { StyleSheet} from 'react-native';
 
 export const NODE_SIZE = 80;
-const PORT_RADIUS = 6;
-const OFF = -10000;
 export const MINIMAP_SIZE = 150; // Size of the minimap in pixels
 export const WORLD_SIZE = 5000;  // Virtual world size for minimap calculations
 export const MIN_SCALE = 0.25;
 export const MAX_SCALE = 2.0;
 
+
 export const RenderLink = ({ fromId, toId, portFrom, portTo, additionalPort, store }) => {
-  // Вычисляем путь кривой
-  const from = store.value[fromId];
-  const to = store.value[toId];
-  
-  if (!from || !to) return Skia.Path.Make(); // Empty path if threre are no nodes
-  
   const path = useDerivedValue(() => {
     const from = store.value[fromId];
     const to = store.value[toId];
-
-    if (!from || !to) return Skia.Path.Make(); // Empty path if threre are no nodes
+    if (!from || !to) return Skia.Path.Make();
 
     const x1 = from.x.value + from.outputPorts[portFrom].x;
     const y1 = from.y.value + from.outputPorts[portFrom].y;
-    const x2 = to.x.value + to.inputPorts[portTo].x;
-    const y2 = to.y.value + to.inputPorts[portTo].y;
-    // if (additionalPort !== 0){
-    //   x2 = to.x + to.additionalPorts[portTo].x;
-    //   y2 = to.y + to.additionalPorts[portTo].y;
-    // }
 
+    let x2, y2;
+    const isAdditional = additionalPort === 1;
 
-    // const x1 = from.x + NODE_SIZE / 2;
-    // const y1 = from.y + NODE_SIZE; // Exit from below
-    // const x2 = to.x + NODE_SIZE / 2;
-    // const y2 = to.y; // Entrance from above
-
-    // Vertical distance between nodes for bending calculation
-    const verticalDistance = Math.abs(y2 - y1);
-    const curveOffset = Math.max(verticalDistance / 2, 20); 
+    if (isAdditional) {
+      const p = to.additionalPorts[portTo];
+      if (!p) return Skia.Path.Make();
+      x2 = to.x.value + p.x;
+      y2 = to.y.value + p.y;
+    } else {
+      const p = to.inputPorts[portTo];
+      if (!p) return Skia.Path.Make();
+      x2 = to.x.value + p.x;
+      y2 = to.y.value + p.y;
+    }
 
     const newPath = Skia.Path.Make();
-    // Moves the pen to the start point
     newPath.moveTo(x1, y1);
-    
-    // Cubic Bezier curve: Draws a cubic Bezier curve from the current pen position to the specified end point, by using two control points
-    // c1x, c1y (checkpoint 1, pull the corve down from the port), c2x, c2y (checkpoint 2, brings the curve up to the finger), x2, y2 (finish)
-    // start → cp1 → cp2 → end
-    newPath.cubicTo(
-      x1, y1 + curveOffset, // Pull down from the first node
-      x2, y2 - curveOffset, // Pull up to the second node
-      x2, y2
-    );
+
+    const margin = 30;
+    const deltaX = x2 - x1;
+    const deltaY = y2 - y1;
+
+    // СЛУЧАЙ 1: Нода выше (нужен сложный обход)
+    if (y2 < y1 + margin) {
+      // Если это доп. порт слева, нам нужно вылететь левее x2 в любом случае
+      const minLeftShift = isAdditional ? x2 - margin : x2;
+      
+      // Вычисляем точку изгиба по горизонтали
+      let sideOffset;
+      if (deltaX > margin && !isAdditional) {
+        sideOffset = x1 + deltaX / 2; // середина, если цель справа
+      } else {
+        // Если цель слева или это доп. порт, уходим в сторону на minOffset
+        const avoidanceWidth = 60 + margin;
+        sideOffset = Math.min(x1, x2) - avoidanceWidth;
+      }
+
+      newPath.lineTo(x1, y1 + margin);
+      newPath.lineTo(sideOffset, y1 + margin);
+      
+      if (!isAdditional) {
+        // Заход в верхний порт
+        newPath.lineTo(sideOffset, y2 - margin);
+        newPath.lineTo(x2, y2 - margin);
+        newPath.lineTo(x2, y2);
+      } else {
+        // Заход в боковой порт (additional)
+        newPath.lineTo(sideOffset, y2);
+        newPath.lineTo(x2, y2);
+      }
+    } 
+    // СЛУЧАЙ 2: Нода ниже
+    else {
+      if (isAdditional) {
+        // Плавный обход к боковому порту
+        // Делаем S-образный изгиб, который заканчивается горизонтально
+        const midX = x1 + (x2 - margin - x1) / 2;
+        newPath.cubicTo(
+          x1, y1 + deltaY * 0.5, // контроль вниз
+          x2 - margin * 2, y2,    // контроль сбоку
+          x2, y2                  // точка входа
+        );
+      } else {
+        // Стандартный вход сверху
+        const offset = Math.max(deltaY / 2, 20);
+        newPath.cubicTo(
+          x1, y1 + offset,
+          x2, y2 - offset,
+          x2, y2
+        );
+      }
+    }
 
     return newPath;
   });
 
-  const opacity = useDerivedValue(() => 
-    (store.value[fromId] && store.value[toId]) ? 1 : 0
-  );
-
   return (
     <Path
       path={path}
-      color="cyan"
       style="stroke"
-      strokeWidth={2}
-      opacity={opacity}
+      strokeWidth={2.2}
+      color="#6e6e6e"
+      strokeCap="round"
+      strokeJoin="round"
     />
   );
 };
@@ -78,19 +111,33 @@ export const RenderLink = ({ fromId, toId, portFrom, portTo, additionalPort, sto
 export const RenderTempLine = ({ tempLine, isConnecting }) => {
   const path = useDerivedValue(() => {
     const { x1, y1, x2, y2 } = tempLine.value;
-    
+
     const newPath = Skia.Path.Make();
     newPath.moveTo(x1, y1);
-
+    const margin = 30;
     const dist = Math.abs(y2 - y1) / 2;
-    const offset = Math.max(dist, 20);
+    const offset = Math.max(dist, 30);
 
-    newPath.cubicTo(
-      x1, y1 + offset,
-      x2, y2 - offset,
-      x2, y2
-    );
-
+    const deltaX = x2 - x1;
+    const minOffset = 50 + margin; // Минимальный вылет в сторону
+  
+    newPath.lineTo(x1, y1 + margin);
+    if (y2 < y1) {
+      const sideOffset = Math.abs(deltaX) < minOffset 
+        ? x1 + (deltaX >= 0 ? minOffset : -minOffset) 
+        : x1 + deltaX / 2;
+  
+      newPath.lineTo(sideOffset, y1 + margin);
+      newPath.lineTo(sideOffset, y2 - margin);
+      newPath.lineTo(x2, y2 - margin);
+      newPath.lineTo(x2, y2);
+    } else{
+      newPath.cubicTo(
+        x1, y1 + offset,
+        x2, y2 - offset,
+        x2, y2
+      );  
+    }
     return newPath;
   });
 
@@ -99,7 +146,7 @@ export const RenderTempLine = ({ tempLine, isConnecting }) => {
   return (
     <Path
       path={path}
-      color="cyan"
+      color="#727272"
       style="stroke"
       strokeWidth={2}
       opacity={opacity}
@@ -149,7 +196,6 @@ export const MinimapLink = ({ fromId, toId, store }) => {
     />
   );
 };
-
 
 export const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: 'white' },

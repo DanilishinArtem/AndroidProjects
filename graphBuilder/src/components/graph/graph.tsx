@@ -58,18 +58,33 @@ export default function GraphApp() {
   // mergeGraphs: Adding a link and merging graphs
   const mergeGraphs = useCallback((fromId, toId, portFrom, portTo, additionalPort) => {
     // protection from existing links (O(L))
-    const exists = links.some(
-      l => (l.from === fromId && l.to === toId && l.portFrom === portFrom && l.portTo === portTo && l.additionalPort === additionalPort)
-    );
-    if (exists) return;
-
-    const newLink = { id: makeLinkId(fromId, toId, portFrom, portTo, additionalPort), from: fromId, to: toId , portFrom: portFrom, portTo: portTo, additionalPort: additionalPort};
-    setLinks(prev => [...prev, newLink]);
-
+    setLinks(prev => {
+      const exists = prev.some(
+        l =>
+          l.from === fromId &&
+          l.to === toId &&
+          l.portFrom === portFrom &&
+          l.portTo === portTo &&
+          l.additionalPort === additionalPort
+      );
+  
+      if (exists) return prev;
+  
+      return [
+        ...prev,
+        {
+          id: makeLinkId(fromId, toId, portFrom, portTo, additionalPort),
+          from: fromId,
+          to: toId,
+          portFrom,
+          portTo,
+          additionalPort,
+        },
+      ];
+    });
     const targetGraphId = nodesStore.value[toId]?.graphId;
     const sourceGraphId = nodesStore.value[fromId]?.graphId;
     if (!targetGraphId || !sourceGraphId) return;
-
     // updating nodesStore on the UI thread (worklet)
     nodesStore.modify((val) => {
       'worklet';
@@ -81,7 +96,8 @@ export default function GraphApp() {
     });
 
     setNodes(prev => prev.map(n => (n.graphId === sourceGraphId ? { ...n, graphId: targetGraphId } : n)));
-  }, [links, makeLinkId, nodesStore]);
+    console.log(`added link from: ${fromId}, to: ${toId}, portFrom: ${portFrom}, portTo: ${portTo}, addPort: ${additionalPort}`)
+  }, [nodesStore]);
 
   // addNodeOfType: create a node with a specific type & optional category
   const addNodeOfType = useCallback((type) => {
@@ -349,7 +365,7 @@ export default function GraphApp() {
           <Group transform={sceneTransform}>
 
             {links.map(l => (
-              <RenderLink key={l.id} fromId={l.from} toId={l.to} portFrom={sourcePort.value} portTo={targetPort.value} additionalPort={additionalPort.value} store={nodesStore} />
+              <RenderLink key={l.id} fromId={l.from} toId={l.to} portFrom={l.portFrom} portTo={l.portTo} additionalPort={l.additionalPort} store={nodesStore} />
             ))}
             <RenderTempLine tempLine={tempLine} isConnecting={isConnecting} />
 
