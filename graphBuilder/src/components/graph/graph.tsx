@@ -1,13 +1,10 @@
-import React, { useState, useMemo, useCallback } from 'react';
+import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, TouchableOpacity, Text, useWindowDimensions, NativeModules } from 'react-native';
 import { Canvas, Group, useFont } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue, makeMutable, clamp, withSpring, useDerivedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import {
-  MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE,
-  RenderMenu, RenderTempLine, RenderLink, RenderNode, MinimapNode, MinimapLink, styles
-} from './RenderFunctions';
+import { MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, RenderTempLine, RenderLink, styles } from './RenderFunctions';
 import { nodeFactory, NodeRenderer } from '../nodes/nodeFactory';
 import { Sidebar } from '../interface/sidebar';
 import { PORT_RADIUS } from '../nodes/Node';
@@ -38,6 +35,11 @@ export default function GraphApp() {
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
+  const linksSV = useSharedValue([]);
+
+  useEffect(() => {
+    linksSV.value = links;
+  }, [links]);
 
   const makeLinkId = useCallback((from, to, portFrom, portTo, addPort) => `${from}__${to}__${portFrom}__${portTo}__${addPort}__${Date.now()}`, []);
 
@@ -159,21 +161,69 @@ export default function GraphApp() {
     setMenuVisible(false);
   }, [links, nodes, recalculateGraphIds, nodesStore]);
 
+  const handleDisconnect = useCallback((targetNodeId, portIndex, portType, currentX, currentY) => {
+    console.log('Handle disconnect called for node:', targetNodeId, 'portIndex:', portIndex, 'portType:', portType);
+    // 1. Ищем линк, который входит в нажатый порт
+    // targetNodeId — это id ноды (строка или число), portIndex — индекс порта, 
+    // portType — 0 для inputPorts, 1 для additionalPorts
+    const existingLinkIndex = links.findIndex(link => 
+      link.to === targetNodeId && 
+      link.portTo === portIndex && 
+      link.additionalPort === portType
+    );
+    if (existingLinkIndex !== -1) {
+      const link = links[existingLinkIndex];
+      if (!link) return;
+      
+      // Получаем данные исходной ноды из store (откуда шел линк)
+      const sourceNode = nodesStore.value[link.from];
+      
+      if (sourceNode && sourceNode.outputPorts) {
+        const sPort = sourceNode.outputPorts[link.portFrom];
+        
+        if (sPort) {
+          // 2. Настраиваем tempLine для анимации "отрыва"
+          // x1, y1 — это координаты выходного порта начальной ноды
+          tempLine.value = { 
+            x1: sourceNode.x.value + sPort.x, 
+            y1: sourceNode.y.value + sPort.y, 
+            x2: currentX, 
+            y2: currentY 
+          };
+          
+          // 3. Переводим жест в состояние "соединения"
+          // Теперь Pan будет думать, что мы тянем линк из исходной ноды
+          activeNodeId.value = link.from; 
+          sourcePort.value = link.portFrom;
+          isConnecting.value = true;
+
+          // 4. Удаляем старый линк из массива
+          setLinks(prev => prev.filter((_, i) => i !== existingLinkIndex));
+        }
+      }
+    }
+  }, [links, nodesStore, setLinks, activeNodeId, sourcePort, isConnecting, tempLine]);
+
   const nodeGestures = useMemo(() => {
     const pan = Gesture.Pan()
       .onBegin((e) => {
+        isConnecting.value = false; 
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
         const store = nodesStore.value || {};
+        
         for (let i = nodes.length - 1; i >= 0; i--) {
           const id = nodes[i].id;
           const n = store[id];
           if (!n) continue;
+
           if (adjX >= n.x.value - PORT_RADIUS && adjX <= n.x.value + n.width + PORT_RADIUS &&
               adjY >= n.y.value - PORT_RADIUS && adjY <= n.y.value + n.height + PORT_RADIUS) {
+            
             activeNodeId.value = id;
             runOnJS(setActiveNodeIdJS)(id);
 
+            let foundOutput = false;
             for (let p = 0; p < (n.outputPorts?.length || 0); p++) {
               const port = n.outputPorts[p];
               const portX = n.x.value + port.x;
@@ -183,9 +233,39 @@ export default function GraphApp() {
                 sourcePort.value = p;
                 isConnecting.value = true;
                 tempLine.value = { x1: portX, y1: portY, x2: adjX, y2: adjY };
-                return;
+                foundOutput = true;
+                break;
               }
             }
+
+            if (foundOutput) return;
+
+            const inputGroups = [
+              { ports: n.inputPorts || [], type: 0 }, 
+              { ports: n.additionalPorts || [], type: 1 }
+            ];
+
+            let foundInput = false;
+            for (const group of inputGroups) {
+              for (let pi = 0; pi < group.ports.length; pi++) {
+                const port = group.ports[pi];
+                const portX = n.x.value + port.x;
+                const portY = n.y.value + port.y;
+                const distSq = (adjX - portX) * (adjX - portX) + (adjY - portY) * (adjY - portY);
+
+                if (distSq <= PORT_RADIUS * PORT_RADIUS) {
+                  const hasLink = linksSV.value.some(l => l.to === id && l.portTo === pi && l.additionalPort === group.type);
+                  if (hasLink) {
+                    runOnJS(handleDisconnect)(id, pi, group.type, adjX, adjY);
+                    foundInput = true;
+                  }
+                  break;
+                }
+              }
+              if (foundInput) break;
+            }
+
+            if (foundInput) return;
 
             if (!isConnecting.value) {
               startDragOffset.value = { x: n.x.value, y: n.y.value };
@@ -198,7 +278,7 @@ export default function GraphApp() {
         runOnJS(setActiveMenu)(null);
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
-        if (!activeNodeId.value) return;
+        if (!activeNodeId.value && tempLine.value) return;
         if (isConnecting.value) {
           tempLine.value = { ...tempLine.value, x2: adjX, y2: adjY };
         } else {
@@ -217,7 +297,9 @@ export default function GraphApp() {
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
 
-        if (isConnecting.value) {
+        const hasMoved = Math.abs(e.translationX) > 3 || Math.abs(e.translationY) > 3;
+
+        if (isConnecting.value && hasMoved) {
           let targetId = null;
           const store = nodesStore.value || {};
           for (const id in store) {
@@ -247,15 +329,16 @@ export default function GraphApp() {
           if (targetId) runOnJS(mergeGraphs)(activeNodeId.value, targetId, sourcePort.value, targetPort.value, additionalPort.value);
         }
 
+        activeNodeId.value = null;
+        isConnecting.value = false;
+        tempLine.value = { x1: 0, y1: 0, x2: 0, y2: 0 };
+        runOnJS(setActiveNodeIdJS)(null);
+        
         nodesStore.modify(val => {
           'worklet';
           if (activeNodeId.value && val[activeNodeId.value]) val[activeNodeId.value].isActive = 0;
           return val;
         });
-
-        activeNodeId.value = null;
-        runOnJS(setActiveNodeIdJS)(null);
-        isConnecting.value = false;
       });
 
     const tap = Gesture.Tap()
