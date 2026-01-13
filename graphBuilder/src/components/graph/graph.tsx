@@ -14,6 +14,7 @@ import { nodeFactory, NodeRenderer } from '../nodes/nodeFactory';
 
 
 import { Sidebar } from '../interface/sidebar';
+import { PORT_RADIUS } from '../nodes/Node';
 import { NodeMenuOverlay } from '../interface/nodeFloatMenu';
 import { runOnJS } from 'react-native-worklets';
 import { useDerivedValue } from 'react-native-reanimated';
@@ -27,20 +28,22 @@ export default function GraphApp() {
 
   // React state: lists (lightweight)
   const [nodes, setNodes] = useState([]); // [{id, graphId, type}]
-  const [links, setLinks] = useState([]); // [{id, from, to}]
+  const [links, setLinks] = useState([]); // [{id, from, to, portFrom, portTo, additionalPort}]
   const [menuVisible, setMenuVisible] = useState(false);
-  const [selectedNodeId, setSelectedNodeId] = useState(null);
   const [activeMenu, setActiveMenu] = useState<{ nodeId: string; x: number; y: number ; width: number; height: number} | null>(null);
 
   // UI-thread shared storage (heavy coords etc)
   const nodesStore = useSharedValue({});
 
   // UI-state (shared values)
-  const menuPos = useSharedValue({ x: 0, y: 0 });
   const activeNodeId = useSharedValue(null);
   const isConnecting = useSharedValue(false);
   const tempLine = useSharedValue({ x1: 0, y1: 0, x2: 0, y2: 0 });
   const startDragOffset = useSharedValue({ x: 0, y: 0 });
+
+  const sourcePort = useSharedValue(null);
+  const targetPort = useSharedValue(null);
+  const additionalPort = useSharedValue(null);
 
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
@@ -48,6 +51,37 @@ export default function GraphApp() {
 
   // SideBar state
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Generating id for a link (stable key)
+  const makeLinkId = useCallback((from, to, portFrom, portTo, additionalPort) => `${from}__${to}__${portFrom}__${portTo}__${additionalPort}__${Date.now()}`, []);
+
+  // mergeGraphs: Adding a link and merging graphs
+  const mergeGraphs = useCallback((fromId, toId, portFrom, portTo, additionalPort) => {
+    // protection from existing links (O(L))
+    const exists = links.some(
+      l => (l.from === fromId && l.to === toId && l.portFrom === portFrom && l.portTo === portTo && l.additionalPort === additionalPort)
+    );
+    if (exists) return;
+
+    const newLink = { id: makeLinkId(fromId, toId, portFrom, portTo, additionalPort), from: fromId, to: toId , portFrom: portFrom, portTo: portTo, additionalPort: additionalPort};
+    setLinks(prev => [...prev, newLink]);
+
+    const targetGraphId = nodesStore.value[toId]?.graphId;
+    const sourceGraphId = nodesStore.value[fromId]?.graphId;
+    if (!targetGraphId || !sourceGraphId) return;
+
+    // updating nodesStore on the UI thread (worklet)
+    nodesStore.modify((val) => {
+      'worklet';
+      // change graphId for all source nodes
+      for (const id in val) {
+        if (val[id].graphId === sourceGraphId) val[id].graphId = targetGraphId;
+      }
+      return val;
+    });
+
+    setNodes(prev => prev.map(n => (n.graphId === sourceGraphId ? { ...n, graphId: targetGraphId } : n)));
+  }, [links, makeLinkId, nodesStore]);
 
   // addNodeOfType: create a node with a specific type & optional category
   const addNodeOfType = useCallback((type) => {
@@ -135,11 +169,9 @@ export default function GraphApp() {
       }
       return val;
     });
-
     setLinks(updatedLinks);
     setNodes(newNodes);
     setMenuVisible(false);
-    setSelectedNodeId(null);
   }, [links, nodes, recalculateGraphIds, nodesStore]);
 
 
@@ -160,51 +192,35 @@ export default function GraphApp() {
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
 
-        // if (menuVisible) {
-        //   const mx = menuPos.value.x, my = menuPos.value.y;
-        //   if (adjX >= mx + 10 && adjX <= mx + 70 && adjY >= my + 40 && adjY <= my + 70) {
-        //     runOnJS(deleteNode)();
-        //     return;
-        //   }
-        //   if (adjX >= mx + 80 && adjX <= mx + 140 && adjY >= my + 40 && adjY <= my + 70) {
-        //     runOnJS(setMenuVisible)(false);
-        //     return;
-        //   }
-        //   runOnJS(setMenuVisible)(false);
-        //   return;
-        // }
-
         const store = nodesStore.value;
         for (const id in store) {
           const n = store[id];
-          if(adjX >= n.x.value && adjX <= n.x.value + n.width && adjY >= n.y.value && adjY <= n.y.value + n.height){
+          if(adjX >= n.x.value - PORT_RADIUS && adjX <= n.x.value + n.width + PORT_RADIUS && adjY >= n.y.value - PORT_RADIUS && adjY <= n.y.value + n.height + PORT_RADIUS){
             activeNodeId.value = id;
-            startDragOffset.value = { x: n.x.value, y: n.y.value };
+            for (let i = 0; i < n.outputPorts.length; i++) {
+              const port = n.outputPorts[i];
+              const portX = n.x.value + port.x;
+              const portY = n.y.value + port.y;
+
+              const distSq = (adjX - portX) * (adjX - portX) + (adjY - portY) * (adjY - portY);
+              if (distSq <= PORT_RADIUS * PORT_RADIUS) {
+                sourcePort.value = i;
+                isConnecting.value = true;
+                console.log(`Starting connection from node ${id}, port ${i}`);
+                tempLine.value = {
+                  x1: portX,
+                  y1: portY,
+                  x2: adjX,
+                  y2: adjY
+                };
+                return;
+              }
+            }
+            if (!isConnecting.value) {
+              startDragOffset.value = { x: n.x.value, y: n.y.value };
+            }
             break;
           }
-
-          // const left = n.x, top = n.y, right = n.x + NODE_SIZE, bottom = n.y + NODE_SIZE;
-          // if (adjX >= left && adjX <= right && adjY >= top && adjY <= bottom) {
-          //   activeNodeId.value = id;
-          //   const isBottomEdge = adjY > bottom - 25;
-          //   if (isBottomEdge) {
-          //     isConnecting.value = true;
-          //     tempLine.value = {
-          //       x1: n.x + NODE_SIZE / 2,
-          //       y1: n.y + NODE_SIZE,
-          //       x2: adjX,
-          //       y2: adjY
-          //     };
-          //   } else {
-          //     startDragOffset.value = { x: n.x, y: n.y };
-          //     nodesStore.modify((val) => {
-          //       'worklet';
-          //       if (val[id]) val[id].isActive = 1;
-          //       return val;
-          //     });
-          //   }
-          //   break;
-          // }
         }
       })
       .onUpdate((e) => {
@@ -212,58 +228,61 @@ export default function GraphApp() {
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
         if (!activeNodeId.value) return;
-
-        nodesStore.modify((val) => {
-          'worklet';
-          const id = activeNodeId.value;
-          if (val[id]) {
-            val[id].x.value = startDragOffset.value.x + (e.translationX / scale.value);
-            val[id].y.value = startDragOffset.value.y + (e.translationY / scale.value);
-          }
-          return val;
-        });
-        // if (isConnecting.value) {
-        //   tempLine.value = {
-        //     ...tempLine.value,
-        //     x2: adjX,
-        //     y2: adjY
-        //   };
-        // } else {
-        //   nodesStore.modify((val) => {
-        //     'worklet';
-        //     const id = activeNodeId.value;
-        //     if (val[id]) {
-        //       val[id].x = startDragOffset.value.x + (e.translationX / scale.value);
-        //       val[id].y = startDragOffset.value.y + (e.translationY / scale.value);
-        //     }
-        //     return val;
-        //   });
-        // }
+        if (isConnecting.value) {
+          tempLine.value = {
+            ...tempLine.value,
+            x2: adjX,
+            y2: adjY
+          };
+        } else {
+          nodesStore.modify((val) => {
+            'worklet';
+            const id = activeNodeId.value;
+            if (val[id]) {
+              val[id].x.value = startDragOffset.value.x + (e.translationX / scale.value);
+              val[id].y.value = startDragOffset.value.y + (e.translationY / scale.value);
+            }
+            return val;
+          });
+        }
       })
       .onFinalize((e) => {
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
-        // if (isConnecting.value) {
-        //   let targetId = null;
-        //   const store = nodesStore.value;
-        //   for (const id in store) {
-        //     const n = store[id];
-        //     if (id !== activeNodeId.value) {
-        //       const left = n.x, top = n.y, right = n.x + NODE_SIZE, bottom = n.y + NODE_SIZE;
-        //       if (adjX >= left && adjX <= right && adjY >= top && adjY <= bottom) {
-        //         targetId = id;
-        //         break;
-        //       }
-        //     }
-        //   }
-        //   if (targetId) runOnJS(mergeGraphs)(activeNodeId.value, targetId);
-        // }
+        if (isConnecting.value) {
+          let targetId = null;
+          const store = nodesStore.value;
+          for (const id in store) {
+            const n = store[id];
+            if(adjX >= n.x.value - PORT_RADIUS && adjX <= n.x.value + n.width + PORT_RADIUS && adjY >= n.y.value - PORT_RADIUS && adjY <= n.y.value + n.height + PORT_RADIUS){
+              // Checking all input and additional ports to find the one under the touch
+              const partsOfPorts = [n.inputPorts, n.additionalPorts];
+              for (let p = 0; p < partsOfPorts.length; p++) {
+                const ports = partsOfPorts[p];
+                for (let i = 0; i < ports.length; i++){
+                  const port = ports[i];
+                  const portX = n.x.value + port.x;
+                  const portY = n.y.value + port.y;
+                  
+                  const distSq = (adjX - portX) * (adjX - portX) + (adjY - portY) * (adjY - portY);
+                  if (distSq <= PORT_RADIUS * PORT_RADIUS) {
+                    targetPort.value = i;
+                    additionalPort.value = p;
+                    targetId = id;
+                    break;
+                  }
+                }
+              }
+            }
+          }
+          if (targetId) runOnJS(mergeGraphs)(activeNodeId.value, targetId, sourcePort.value, targetPort.value, additionalPort.value);
+        }
 
-        // nodesStore.modify((val) => {
-        //   'worklet';
-        //   if (activeNodeId.value && val[activeNodeId.value]) val[activeNodeId.value].isActive = 0;
-        //   return val;
-        // });
+        nodesStore.modify((val) => {
+          'worklet';
+          if (activeNodeId.value && val[activeNodeId.value]) val[activeNodeId.value].isActive = 0;
+          return val;
+        });
 
         activeNodeId.value = null;
         isConnecting.value = false;
@@ -328,6 +347,13 @@ export default function GraphApp() {
         <GestureDetector gesture={nodeGestures}>
         <Canvas style={styles.canvas}>
           <Group transform={sceneTransform}>
+
+            {links.map(l => (
+              <RenderLink key={l.id} fromId={l.from} toId={l.to} portFrom={sourcePort.value} portTo={targetPort.value} additionalPort={additionalPort.value} store={nodesStore} />
+            ))}
+            <RenderTempLine tempLine={tempLine} isConnecting={isConnecting} />
+
+            
             {nodes.map(n => {
               return (
                 <NodeRenderer 
@@ -340,7 +366,6 @@ export default function GraphApp() {
               );
             })}
 
-            <RenderMenu visible={menuVisible} pos={menuPos} font={font} nodeId={selectedNodeId} />
           </Group>
         </Canvas>
         </GestureDetector>

@@ -17,7 +17,7 @@ const ICONS: Record<string, string> = {
 };
 
 // Константы выносим за пределы компонента
-const PORT_RADIUS = 6;
+export const PORT_RADIUS = 6;
 const PORT_SPACING = 20;
 const NODE_MIN_WIDTH = 80;
 const NODE_MIN_HEIGHT = 80;
