@@ -50,10 +50,10 @@ export default function GraphApp() {
     active: false,
   });
   const startSelectionRect = useSharedValue<{
-    x: number;
-    y: number;
-    width: number;
-    height: number;
+    x1: number;
+    y1: number;
+    x2: number;
+    y2: number;
   } | null>(null);
 
   const selectionDragging = useSharedValue(false);
@@ -276,8 +276,10 @@ export default function GraphApp() {
             const port = n.outputPorts[p];
             const portX = n.x.value + port.x;
             const portY = n.y.value + port.y;
-            const distSq = (adjX - portX) * (adjX - portX) + (adjY - portY) * (adjY - portY);
-            if (distSq <= PORT_RADIUS * PORT_RADIUS) {
+
+            const delta = 20;
+            const hitbox = adjX > (portX - PORT_RADIUS) && adjX < (portX + PORT_RADIUS) && adjY > (portY - PORT_RADIUS - delta) && adjY < (portY + PORT_RADIUS + delta)
+            if(hitbox){
               sourcePort.value = p;
               isConnecting.value = true;
               tempLine.value = { x1: portX, y1: portY, x2: adjX, y2: adjY };
@@ -316,7 +318,7 @@ export default function GraphApp() {
 
           // Если схватили ноду, которая НЕ в выделении — сбрасываем выделение
           if (!isConnecting.value) {
-            if (!selectedNodeIds.value.includes(hitId)) {
+            if (!selectedNodeIds.value.includes(hitId) || selectedNodeIds.value.length <= 1) {
               selectedNodeIds.value = [hitId];
               // когда мы нажали конкретную ноду — рамку убираем
               selectionRect.value = { x1: 0, y1: 0, x2: 0, y2: 0, active: false };
@@ -448,8 +450,9 @@ export default function GraphApp() {
                   const port = ports[pi];
                   const portX = n.x.value + port.x;
                   const portY = n.y.value + port.y;
-                  const distSq = (adjX - portX) * (adjX - portX) + (adjY - portY) * (adjY - portY);
-                  if (distSq <= PORT_RADIUS * PORT_RADIUS) {
+                  const delta = 20;
+                  const hitbox = adjX > (portX - PORT_RADIUS) && adjX < (portX + PORT_RADIUS) && adjY > (portY - PORT_RADIUS - delta) && adjY < (portY + PORT_RADIUS + delta)
+                  if(hitbox){
                     targetPort.value = pi;
                     additionalPort.value = part;
                     targetId = id;
