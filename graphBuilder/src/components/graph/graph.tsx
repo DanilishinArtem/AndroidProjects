@@ -41,6 +41,12 @@ export default function GraphApp() {
   const selectedNodeIds = useSharedValue([]);
   const linksSV = useSharedValue([]);
 
+  const isPinching = useSharedValue(false);
+  const savedTranslateX = useSharedValue(0);
+  const savedTranslateY = useSharedValue(0);
+  const pinchCenter = useSharedValue({ x: 0, y: 0 });
+  const savedScale = useSharedValue(1);
+
 
   const selectionRect = useSharedValue({
     x1: 0,
@@ -537,6 +543,52 @@ export default function GraphApp() {
     setActiveNodeIdJS,
   ]);
 
+  // Canvas gestures (pan + pinch)
+  const canvasGesture = useMemo(() => {
+    const canvasPan = Gesture.Pan()
+      .minPointers(2)
+      .onStart(() => {
+        if (isPinching.value || activeNodeId.value !== null) return;
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+      })
+      .onUpdate((e) => {
+        if (isPinching.value || activeNodeId.value !== null) return;
+        const nextX = savedTranslateX.value + e.translationX;
+        const nextY = savedTranslateY.value + e.translationY;
+        translateX.value = withSpring(nextX);
+        translateY.value = withSpring(nextY);
+      });
+
+    const canvasPinch = Gesture.Pinch()
+      .onStart((e) => {
+        isPinching.value = true;
+        savedScale.value = scale.value;
+        savedTranslateX.value = translateX.value;
+        savedTranslateY.value = translateY.value;
+        pinchCenter.value = {
+          x: (e.focalX - translateX.value) / scale.value,
+          y: (e.focalY - translateY.value) / scale.value
+        };
+      })
+      .onUpdate((e) => {
+        let nextScale = savedScale.value * e.scale;
+        if (nextScale < MIN_SCALE) nextScale = MIN_SCALE;
+        if (nextScale > MAX_SCALE) nextScale = MAX_SCALE;
+        translateX.value = savedTranslateX.value - pinchCenter.value.x * (nextScale - savedScale.value);
+        translateY.value = savedTranslateY.value - pinchCenter.value.y * (nextScale - savedScale.value);
+        scale.value = nextScale;
+      })
+      .onEnd(() => {
+        isPinching.value = false;
+      });
+
+    return Gesture.Simultaneous(canvasPan, canvasPinch);
+  }, [
+    isPinching, activeNodeId, savedTranslateX, savedTranslateY,
+    translateX, translateY, scale, savedScale, pinchCenter
+  ]);
+
   const handleMenuAction = useCallback((action) => {
     if (action === 'delete' && activeMenu) {
       deleteNode(activeMenu.nodeId);
@@ -553,6 +605,8 @@ export default function GraphApp() {
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 14);
   const iconFont = useFont(require("../../../assets/fonts/MaterialCommunityIcons.ttf"), 25);
 
+  const composedGesture = useMemo(() => Gesture.Simultaneous(nodeGestures, canvasGesture), [nodeGestures, canvasGesture]);
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
@@ -565,7 +619,7 @@ export default function GraphApp() {
           </TouchableOpacity>
         </View>
 
-        <GestureDetector gesture={nodeGestures}>
+        <GestureDetector gesture={composedGesture}>
           <Canvas style={styles.canvas}>
             <Group transform={sceneTransform}>
 
