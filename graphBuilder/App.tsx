@@ -21,9 +21,7 @@ const styles = StyleSheet.create({
 });
 
 // TODO: 1. Add load and save buttons and logic
-// TODO: 2. Make dynamic minimap (if we achieve edge of minimap we should shift green frame)
 // TODO: 3. Make names of: 3.1. Nodes, 3.2. Ports
-
 
 // What have been done:
 // 1. Added factory on nodes
@@ -33,3 +31,4 @@ const styles = StyleSheet.create({
 // 5. Added area selection and group dragging
 // 6. Added feature (active node is on the front)
 // 7. Added disconnection for links
+// 8. Added constant movement at the border

@@ -13,9 +13,8 @@ const MENU_ICONS = [
   { name: 'trash-can-outline', action: 'delete' },
 ];
 
-export const NodeMenuOverlay: React.FC<MenuOverlayProps> = ({ visible, x, y, width, onAction }) => {
+export const NodeMenuOverlay: React.FC<MenuOverlayProps> = ({ visible, x, y, width, scale, onAction }) => {
   
-  // 2. Анимированный стиль для появления
   const animatedStyle = useAnimatedStyle(() => {
     return {
       opacity: withTiming(visible ? 1 : 0, { duration: 200 }),
@@ -38,10 +37,10 @@ export const NodeMenuOverlay: React.FC<MenuOverlayProps> = ({ visible, x, y, wid
         <TouchableOpacity 
           key={icon.action} 
           onPress={() => onAction(icon.action)} 
-          style={styles.iconButton}
+          style={[styles.iconButton, { width: scale * 16, height: scale * 16 }]}
           activeOpacity={0.7}
         >
-          <Icon name={icon.name} size={16} color="#FFFFFF" />
+          <Icon name={icon.name} size={scale * 16} color="#FFFFFF" />
         </TouchableOpacity>
       ))}
     </Animated.View>
@@ -65,9 +64,7 @@ const styles = StyleSheet.create({
     borderColor: '#333',
   },
   iconButton: {
-    width: 16,
-    height: 16,
-    borderRadius: 16,
+    borderRadius: 4,
     backgroundColor: '#333',
     justifyContent: 'center',
     alignItems: 'center',

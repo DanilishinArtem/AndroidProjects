@@ -3,21 +3,18 @@ import { View, TouchableOpacity, Text, useWindowDimensions, NativeModules } from
 import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue, makeMutable, clamp, withSpring, useDerivedValue, useFrameCallback } from 'react-native-reanimated';
-import { MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, MinimapNode, RenderTempLine, RenderLink, styles } from './RenderFunctions';
+import { MinimapNode, RenderTempLine, RenderLink, styles } from './RenderFunctions';
 import { nodeFactory, NodeRenderer } from '../nodes/nodeFactory';
 import { Sidebar } from '../interface/sidebar';
 import { SelectionRect } from '../interface/areaSelection';
 import { PORT_RADIUS } from '../nodes/Node';
 import { NodeMenuOverlay } from '../interface/nodeFloatMenu';
 import { runOnJS } from 'react-native-worklets';
+import {MINIMAP_SIZE, WORLD_SIZE, MIN_SCALE, MAX_SCALE, EDGE_MARGIN, EPSILON_PORT_HITBOX, AUTO_PAN_SPEED, FONT_SIZE, ICON_FONT_SIZE, RIGHT_MARGIN, OFF} from './constants';
 
 const { GraphEngine } = NativeModules;
 
 export default function GraphApp() {
-  const EDGE_MARGIN = 40;
-  const AUTO_PAN_SPEED = 6;
-
-
   const MINIMAP_RATIO = MINIMAP_SIZE / WORLD_SIZE;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
@@ -278,8 +275,7 @@ export default function GraphApp() {
             const port = n.outputPorts[p];
             const portX = n.x.value + port.x;
             const portY = n.y.value + port.y;
-            const delta = 20;
-            const hitbox = adjX > (portX - PORT_RADIUS) && adjX < (portX + PORT_RADIUS) && adjY > (portY - PORT_RADIUS - delta) && adjY < (portY + PORT_RADIUS + delta)
+            const hitbox = adjX > (portX - PORT_RADIUS) && adjX < (portX + PORT_RADIUS) && adjY > (portY - PORT_RADIUS - EPSILON_PORT_HITBOX) && adjY < (portY + PORT_RADIUS + EPSILON_PORT_HITBOX)
             if(hitbox){
               sourcePort.value = p;
               isConnecting.value = true;
@@ -417,8 +413,7 @@ export default function GraphApp() {
                   const port = ports[pi];
                   const portX = n.x.value + port.x;
                   const portY = n.y.value + port.y;
-                  const delta = 20;
-                  const hitbox = adjX > (portX - PORT_RADIUS) && adjX < (portX + PORT_RADIUS) && adjY > (portY - PORT_RADIUS - delta) && adjY < (portY + PORT_RADIUS + delta)
+                  const hitbox = adjX > (portX - PORT_RADIUS) && adjX < (portX + PORT_RADIUS) && adjY > (portY - PORT_RADIUS - EPSILON_PORT_HITBOX) && adjY < (portY + PORT_RADIUS + EPSILON_PORT_HITBOX)
                   if(hitbox){
                     targetPort.value = pi;
                     additionalPort.value = part;
@@ -469,7 +464,7 @@ export default function GraphApp() {
       for (const id in store) {
         const n = store[id];
         if (adjX >= n.x.value && adjX <= n.x.value + n.width && adjY >= n.y.value && adjY <= n.y.value + n.height) {
-          found = { nodeId: n.nodeId, x: n.x.value, y: n.y.value, width: n.width, height: n.height };
+          found = { nodeId: n.nodeId, x: n.x.value * scale.value + translateX.value, y: n.y.value * scale.value + translateY.value, width: n.width * scale.value, height: n.height * scale.value, scale: scale.value };
           break;
         }
       }
@@ -483,6 +478,7 @@ export default function GraphApp() {
     const canvasPan = Gesture.Pan()
       .minPointers(2)
       .onStart(() => {
+        runOnJS(setActiveMenu)(null);
         if (isPinching.value || activeNodeId.value !== null) return;
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
@@ -522,12 +518,12 @@ export default function GraphApp() {
 
   const sceneTransform = useDerivedValue(() => [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }]);
 
-  const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 14);
-  const iconFont = useFont(require("../../../assets/fonts/MaterialCommunityIcons.ttf"), 25);
+  const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), FONT_SIZE);
+  const iconFont = useFont(require("../../../assets/fonts/MaterialCommunityIcons.ttf"), ICON_FONT_SIZE);
 
   const composedGesture = useMemo(() => Gesture.Simultaneous(nodeGestures, canvasGesture), [nodeGestures, canvasGesture]);
 
-  const vX = useDerivedValue(() => { const s = scale.value || 1; const w = ((screenWidth - 100) / s) * MINIMAP_RATIO; const rawX = (-translateX.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2); return clamp(rawX, 0, MINIMAP_SIZE - w); });
+  const vX = useDerivedValue(() => { const s = scale.value || 1; const w = ((screenWidth - RIGHT_MARGIN) / s) * MINIMAP_RATIO; const rawX = (-translateX.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2); return clamp(rawX, 0, MINIMAP_SIZE - w); });
   const vY = useDerivedValue(() => { const s = scale.value || 1; const h = (screenHeight / s) * MINIMAP_RATIO; const rawY = (-translateY.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2); return clamp(rawY, 0, MINIMAP_SIZE - h); });
   const vW = useDerivedValue(() => { const w = (screenWidth / (scale.value || 1)) * MINIMAP_RATIO; return Math.min(w, MINIMAP_SIZE); });
   const vH = useDerivedValue(() => { const h = (screenHeight / (scale.value || 1)) * MINIMAP_RATIO; return Math.min(h, MINIMAP_SIZE); });
@@ -581,7 +577,7 @@ export default function GraphApp() {
           <View style={styles.minimapContainer}>
             <Canvas style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }}>
               <Group transform={minimapContentTransform}>
-                {nodes.map(n => <MinimapNode key={n.id} id={n.id} store={nodesStore} OFF={-10000} />)}
+                {nodes.map(n => <MinimapNode key={n.id} id={n.id} store={nodesStore} OFF={OFF} />)}
               </Group>
               <Rect x={vX} y={vY} width={vW} height={vH} color="green" style="stroke" strokeWidth={2} />
             </Canvas>
@@ -589,7 +585,14 @@ export default function GraphApp() {
         </GestureDetector>
 
         {activeMenu && (
-          <NodeMenuOverlay visible={!!activeMenu} x={activeMenu.x} y={activeMenu.y} width={activeMenu.width} onAction={handleMenuAction} />
+          <NodeMenuOverlay
+            visible={!!activeMenu}
+            x={activeMenu.x}
+            y={activeMenu.y}
+            width={activeMenu.width}
+            scale={activeMenu.scale}
+            onAction={handleMenuAction}
+          />
         )}
 
       </View>

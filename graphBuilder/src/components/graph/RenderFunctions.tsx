@@ -9,17 +9,17 @@ import {
 } from '@shopify/react-native-skia';
 import { useDerivedValue } from 'react-native-reanimated';
 import { StyleSheet } from 'react-native';
+import {MINIMAP_SIZE, LINK_COLOR, LINK_WIDTH, MARGIN, ARROW_SIZE} from './constants';
+// export const NODE_SIZE = 80;
+// export const MINIMAP_SIZE = 150;
+// export const WORLD_SIZE = 5000;
+// export const MIN_SCALE = 0.25;
+// export const MAX_SCALE = 2.0;
 
-export const NODE_SIZE = 80;
-export const MINIMAP_SIZE = 150;
-export const WORLD_SIZE = 5000;
-export const MIN_SCALE = 0.25;
-export const MAX_SCALE = 2.0;
-
-const LINK_COLOR = '#6e6e6e';
-const LINK_WIDTH = 2.2;
-const MARGIN = 30;
-const ARROW_SIZE = 20;
+// const LINK_COLOR = '#6e6e6e';
+// const LINK_WIDTH = 2.2;
+// const MARGIN = 30;
+// const ARROW_SIZE = 20;
 
 const emptyPath = () => Skia.Path.Make();
 
