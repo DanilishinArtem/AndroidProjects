@@ -171,19 +171,11 @@ export const MinimapNode = ({ id, store, OFF }) => {
     ];
   });
 
-  // const x = useDerivedValue(() => {
-  //     const n = store.value[id];
-  //     return n ? n.x : OFF;
-  //   });
-  //   const y = useDerivedValue(() => {
-  //     const n = store.value[id];
-  //     return n ? n.y : OFF;
-  //   });
     return (
       <Group transform={transform}>
         <Rect 
-        x={nodeData.x.value}
-        y={nodeData.y.value}
+        x={0}
+        y={0}
         width={nodeData.width}
         height={nodeData.height}
         color="white"

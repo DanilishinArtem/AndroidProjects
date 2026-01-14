@@ -547,24 +547,27 @@ export default function GraphApp() {
     const canvasPan = Gesture.Pan()
       .minPointers(2)
       .onStart(() => {
+        // Блокируем, если уже щипок или выделен узел
         if (isPinching.value || activeNodeId.value !== null) return;
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
       })
       .onUpdate((e) => {
         if (isPinching.value || activeNodeId.value !== null) return;
-        const nextX = savedTranslateX.value + e.translationX;
-        const nextY = savedTranslateY.value + e.translationY;
-        translateX.value = withSpring(nextX);
-        translateY.value = withSpring(nextY);
+        
+        // Прямое присвоение БЕЗ withSpring для плавности следования за пальцем
+        translateX.value = savedTranslateX.value + e.translationX;
+        translateY.value = savedTranslateY.value + e.translationY;
       });
-
+  
     const canvasPinch = Gesture.Pinch()
       .onStart((e) => {
         isPinching.value = true;
         savedScale.value = scale.value;
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
+        
+        // Фокус щипка
         pinchCenter.value = {
           x: (e.focalX - translateX.value) / scale.value,
           y: (e.focalY - translateY.value) / scale.value
@@ -572,21 +575,26 @@ export default function GraphApp() {
       })
       .onUpdate((e) => {
         let nextScale = savedScale.value * e.scale;
+        
+        // Ограничение зума
         if (nextScale < MIN_SCALE) nextScale = MIN_SCALE;
         if (nextScale > MAX_SCALE) nextScale = MAX_SCALE;
-        translateX.value = savedTranslateX.value - pinchCenter.value.x * (nextScale - savedScale.value);
-        translateY.value = savedTranslateY.value - pinchCenter.value.y * (nextScale - savedScale.value);
+  
+        const scaleChange = nextScale - savedScale.value;
+        
+        // Корректировка позиции, чтобы зум шел в точку между пальцами
+        translateX.value = savedTranslateX.value - pinchCenter.value.x * scaleChange;
+        translateY.value = savedTranslateY.value - pinchCenter.value.y * scaleChange;
         scale.value = nextScale;
       })
       .onEnd(() => {
         isPinching.value = false;
       });
-
+  
     return Gesture.Simultaneous(canvasPan, canvasPinch);
-  }, [
-    isPinching, activeNodeId, savedTranslateX, savedTranslateY,
-    translateX, translateY, scale, savedScale, pinchCenter
-  ]);
+    
+    // Убираем лишние зависимости, оставляем только те, что реально могут измениться как ссылки
+  }, [activeNodeId]);
 
   const handleMenuAction = useCallback((action) => {
     if (action === 'delete' && activeMenu) {
