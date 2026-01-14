@@ -1,9 +1,8 @@
-import React, { useState, useMemo, useCallback, useEffect } from 'react';
+import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { View, TouchableOpacity, Text, useWindowDimensions, NativeModules } from 'react-native';
 import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue, makeMutable, clamp, withSpring, useDerivedValue } from 'react-native-reanimated';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, MinimapNode, RenderTempLine, RenderLink, styles } from './RenderFunctions';
 import { nodeFactory, NodeRenderer } from '../nodes/nodeFactory';
 import { Sidebar } from '../interface/sidebar';
@@ -29,15 +28,13 @@ export default function GraphApp() {
   const activeNodeId = useSharedValue(null);
   const isConnecting = useSharedValue(false);
   const tempLine = useSharedValue({ x1: 0, y1: 0, x2: 0, y2: 0 });
-  // const startDragOffset = useSharedValue({ x: 0, y: 0 });
-  const startDragOffset = useSharedValue<Record<string, { x: number, y: number }>>({});
+  const startDragOffset = useSharedValue({});
   const sourcePort = useSharedValue(null);
   const targetPort = useSharedValue(null);
   const additionalPort = useSharedValue(null);
   const scale = useSharedValue(1);
   const translateX = useSharedValue(0);
   const translateY = useSharedValue(0);
-  // const selectionRect = useSharedValue({ x1: 0, y1: 0, x2: 0, y2: 0, active: false });
   const selectedNodeIds = useSharedValue([]);
   const linksSV = useSharedValue([]);
 
@@ -47,50 +44,25 @@ export default function GraphApp() {
   const pinchCenter = useSharedValue({ x: 0, y: 0 });
   const savedScale = useSharedValue(1);
 
-
-  const selectionRect = useSharedValue({
-    x1: 0,
-    y1: 0,
-    x2: 0,
-    y2: 0,
-    active: false,
-  });
-  const startSelectionRect = useSharedValue<{
-    x1: number;
-    y1: number;
-    x2: number;
-    y2: number;
-  } | null>(null);
-
+  const selectionRect = useSharedValue({ x1: 0, y1: 0, x2: 0, y2: 0, active: false });
+  const startSelectionRect = useSharedValue(null);
   const selectionDragging = useSharedValue(false);
 
   useEffect(() => {
     linksSV.value = links;
   }, [links]);
 
-  const makeLinkId = useCallback((from, to, portFrom, portTo, addPort) => `${from}__${to}__${portFrom}__${portTo}__${addPort}__${Date.now()}`, []);
+  const idCounterRef = useRef(0);
+  const makeLinkId = useCallback((from, to, portFrom, portTo, addPort) => {
+    idCounterRef.current += 1;
+    return `${from}__${to}__${portFrom}__${portTo}__${addPort}__${Date.now()}_${idCounterRef.current}`;
+  }, []);
 
   const mergeGraphs = useCallback((fromId, toId, portFrom, portTo, addPort) => {
     setLinks(prev => {
-      const exists = prev.some(l =>
-        l.from === fromId &&
-        l.to === toId &&
-        l.portFrom === portFrom &&
-        l.portTo === portTo &&
-        l.additionalPort === addPort
-      );
+      const exists = prev.some(l => l.from === fromId && l.to === toId && l.portFrom === portFrom && l.portTo === portTo && l.additionalPort === addPort);
       if (exists) return prev;
-      return [
-        ...prev,
-        {
-          id: makeLinkId(fromId, toId, portFrom, portTo, addPort),
-          from: fromId,
-          to: toId,
-          portFrom,
-          portTo,
-          additionalPort: addPort,
-        },
-      ];
+      return [...prev, { id: makeLinkId(fromId, toId, portFrom, portTo, addPort), from: fromId, to: toId, portFrom, portTo, additionalPort: addPort }];
     });
 
     const targetGraphId = nodesStore.value?.[toId]?.graphId;
@@ -109,7 +81,7 @@ export default function GraphApp() {
   }, [nodesStore, makeLinkId]);
 
   const addNodeOfType = useCallback((type) => {
-    const id = `n_${Date.now()}`;
+    const id = `n_${Date.now()}_${Math.random().toString(36).slice(2,8)}`;
     const graphId = `g_${id}`;
     const initX = (screenWidth / 4 - translateX.value) / scale.value;
     const initY = (screenHeight / 4 - translateY.value) / scale.value;
@@ -139,12 +111,13 @@ export default function GraphApp() {
 
     const visited = new Set();
     const result = [];
+    const ts = Date.now();
     let counter = 1;
 
     for (const startNode of currentNodes) {
       const sid = startNode.id;
       if (visited.has(sid)) continue;
-      const newGraphId = `g_n_${Date.now()}_${counter++}`;
+      const newGraphId = `g_n_${ts}_${counter++}`;
       const queue = [sid];
       visited.add(sid);
 
@@ -163,72 +136,52 @@ export default function GraphApp() {
     }
 
     for (const n of currentNodes) {
-      if (!result.find(r => r.id === n.id)) result.push({ ...n, graphId: `g_n_${Date.now()}_${counter++}` });
+      if (!result.find(r => r.id === n.id)) result.push({ ...n, graphId: `g_n_${ts}_${counter++}` });
     }
 
     return result;
   }, []);
 
   const deleteNode = useCallback((nodeId) => {
-    const updatedLinks = links.filter(l => l.from !== nodeId && l.to !== nodeId);
-    const updatedNodes = nodes.filter(n => n.id !== nodeId);
-    const newNodes = recalculateGraphIds(updatedNodes, updatedLinks);
-
-    nodesStore.modify(val => {
-      'worklet';
-      if (val[nodeId]) delete val[nodeId];
-      for (const node of newNodes) {
-        if (val[node.id]) val[node.id].graphId = node.graphId;
-      }
-      return val;
+    setLinks(prevLinks => {
+      const updatedLinks = prevLinks.filter(l => l.from !== nodeId && l.to !== nodeId);
+      setNodes(prevNodes => {
+        const updatedNodes = prevNodes.filter(n => n.id !== nodeId);
+        const newNodes = recalculateGraphIds(updatedNodes, updatedLinks);
+        nodesStore.modify(val => {
+          'worklet';
+          if (val[nodeId]) delete val[nodeId];
+          for (const node of newNodes) {
+            if (val[node.id]) val[node.id].graphId = node.graphId;
+          }
+          return val;
+        });
+        return newNodes;
+      });
+      return updatedLinks;
     });
-
-    setLinks(updatedLinks);
-    setNodes(newNodes);
     setMenuVisible(false);
-  }, [links, nodes, recalculateGraphIds, nodesStore]);
+  }, [recalculateGraphIds, nodesStore]);
 
   const handleDisconnect = useCallback((targetNodeId, portIndex, portType, currentX, currentY) => {
-    // 1. Ищем линк, который входит в нажатый порт
-    // targetNodeId — это id ноды (строка или число), portIndex — индекс порта, 
-    // portType — 0 для inputPorts, 1 для additionalPorts
-    const existingLinkIndex = links.findIndex(link => 
-      link.to === targetNodeId && 
-      link.portTo === portIndex && 
-      link.additionalPort === portType
-    );
-    if (existingLinkIndex !== -1) {
-      const link = links[existingLinkIndex];
-      if (!link) return;
-      
-      // Получаем данные исходной ноды из store (откуда шел линк)
+    setLinks(prev => {
+      const existingLinkIndex = prev.findIndex(link => link.to === targetNodeId && link.portTo === portIndex && link.additionalPort === portType);
+      if (existingLinkIndex === -1) return prev;
+      const link = prev[existingLinkIndex];
       const sourceNode = nodesStore.value[link.from];
-      
       if (sourceNode && sourceNode.outputPorts) {
         const sPort = sourceNode.outputPorts[link.portFrom];
-        
         if (sPort) {
-          // 2. Настраиваем tempLine для анимации "отрыва"
-          // x1, y1 — это координаты выходного порта начальной ноды
-          tempLine.value = { 
-            x1: sourceNode.x.value + sPort.x, 
-            y1: sourceNode.y.value + sPort.y, 
-            x2: currentX, 
-            y2: currentY 
-          };
-          
-          // 3. Переводим жест в состояние "соединения"
-          // Теперь Pan будет думать, что мы тянем линк из исходной ноды
-          activeNodeId.value = link.from; 
+          tempLine.value = { x1: sourceNode.x.value + sPort.x, y1: sourceNode.y.value + sPort.y, x2: currentX, y2: currentY };
+          activeNodeId.value = link.from;
           sourcePort.value = link.portFrom;
           isConnecting.value = true;
-
-          // 4. Удаляем старый линк из массива
-          setLinks(prev => prev.filter((_, i) => i !== existingLinkIndex));
+          return prev.filter((_, i) => i !== existingLinkIndex);
         }
       }
-    }
-  }, [links, nodesStore, setLinks, activeNodeId, sourcePort, isConnecting, tempLine]);
+      return prev;
+    });
+  }, [nodesStore, tempLine, activeNodeId, sourcePort, isConnecting]);
 
   const nodeGestures = useMemo(() => {
     const pan = Gesture.Pan()
@@ -237,13 +190,8 @@ export default function GraphApp() {
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
         const store = nodesStore.value || {};
-
-        // Сбрасываем флаг перетаскивания рамки по умолчанию
         selectionDragging.value = false;
-
         let hitId = null;
-
-        // 1) сначала пробуем найти конкретную ноду под курсором
         for (let i = nodes.length - 1; i >= 0; i--) {
           const id = nodes[i].id;
           const n = store[id];
@@ -254,35 +202,27 @@ export default function GraphApp() {
           }
         }
 
-        // 2) если ноду не нашли, но рамка активна, проверяем попадание внутрь рамки — в этом случае запускаем перетаскивание группы
         if (!hitId || selectionRect.value.active) {
           const s = selectionRect.value;
           const minX = Math.min(s.x1, s.x2);
           const maxX = Math.max(s.x1, s.x2);
           const minY = Math.min(s.y1, s.y2);
           const maxY = Math.max(s.y1, s.y2);
-
           if (adjX >= minX && adjX <= maxX && adjY >= minY && adjY <= maxY) {
-            // попали внутрь рамки — считаем, что начали перетаскивать группу
             selectionDragging.value = true;
-            // если есть выделенные ноды — Берём первую как ведущую
             hitId = selectedNodeIds.value && selectedNodeIds.value.length ? selectedNodeIds.value[0] : null;
           }
         }
 
         if (hitId) {
-          // Установили активную ноду
           activeNodeId.value = hitId;
           runOnJS(setActiveNodeIdJS)(hitId);
-
           const n = store[hitId];
-          // Проверяем output порты (начало соединения)
           let foundOutput = false;
           for (let p = 0; p < (n.outputPorts?.length || 0); p++) {
             const port = n.outputPorts[p];
             const portX = n.x.value + port.x;
             const portY = n.y.value + port.y;
-
             const delta = 20;
             const hitbox = adjX > (portX - PORT_RADIUS) && adjX < (portX + PORT_RADIUS) && adjY > (portY - PORT_RADIUS - delta) && adjY < (portY + PORT_RADIUS + delta)
             if(hitbox){
@@ -295,12 +235,7 @@ export default function GraphApp() {
           }
           if (foundOutput) return;
 
-          // Проверяем input / additional порты
-          const inputGroups = [
-            { ports: n.inputPorts || [], type: 0 },
-            { ports: n.additionalPorts || [], type: 1 },
-          ];
-
+          const inputGroups = [ { ports: n.inputPorts || [], type: 0 }, { ports: n.additionalPorts || [], type: 1 } ];
           let foundInput = false;
           for (const group of inputGroups) {
             for (let pi = 0; pi < group.ports.length; pi++) {
@@ -308,7 +243,6 @@ export default function GraphApp() {
               const portX = n.x.value + port.x;
               const portY = n.y.value + port.y;
               const distSq = (adjX - portX) * (adjX - portX) + (adjY - portY) * (adjY - portY);
-
               if (distSq <= PORT_RADIUS * PORT_RADIUS) {
                 const hasLink = linksSV.value.some(l => l.to === hitId && l.portTo === pi && l.additionalPort === group.type);
                 if (hasLink) {
@@ -322,28 +256,21 @@ export default function GraphApp() {
           }
           if (foundInput) return;
 
-          // Если схватили ноду, которая НЕ в выделении — сбрасываем выделение
           if (!isConnecting.value) {
             if (!selectedNodeIds.value.includes(hitId) || selectedNodeIds.value.length <= 1) {
               selectedNodeIds.value = [hitId];
-              // когда мы нажали конкретную ноду — рамку убираем
               selectionRect.value = { x1: 0, y1: 0, x2: 0, y2: 0, active: false };
             }
 
-            // Запоминаем стартовые позиции всех выделенных нод
             const offsets = {};
             selectedNodeIds.value.forEach(id => {
               if (store[id]) offsets[id] = { x: store[id].x.value, y: store[id].y.value };
             });
             startDragOffset.value = offsets;
 
-            // Если мы начали перетаскивать существующую рамку — запомним её стартовые координаты
-            if (selectionDragging.value) {
-              startSelectionRect.value = { ...selectionRect.value };
-            }
+            if (selectionDragging.value) startSelectionRect.value = { ...selectionRect.value };
           }
         } else {
-          // Ничего не попали — начинаем рисовать рамку выделения
           activeNodeId.value = null;
           selectedNodeIds.value = [];
           selectionRect.value = { x1: adjX, y1: adjY, x2: adjX, y2: adjY, active: true };
@@ -354,27 +281,19 @@ export default function GraphApp() {
         runOnJS(setActiveMenu)(null);
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
-
-        // Если рамка активна и мы НЕ в режиме перетаскивания рамки — обновляем конец рамки (рисуем рамку)
         if (selectionRect.value.active && !selectionDragging.value) {
           selectionRect.value = { ...selectionRect.value, x2: adjX, y2: adjY };
           return;
         }
-
-        // Если тянем линк — обновляем временную линию и не движем ноды
         if (isConnecting.value) {
           tempLine.value = { ...tempLine.value, x2: adjX, y2: adjY };
           return;
         }
-
-        // Перетаскивание группы либо одиночной ноды
         if (activeNodeId.value) {
           const dx = e.translationX / scale.value;
           const dy = e.translationY / scale.value;
-
           nodesStore.modify(val => {
             'worklet';
-            // Двигаем все ноды из selectedNodeIds относительно startDragOffset
             selectedNodeIds.value.forEach(id => {
               const startPos = startDragOffset.value[id];
               if (val[id] && startPos) {
@@ -382,19 +301,10 @@ export default function GraphApp() {
                 val[id].y.value = startPos.y + dy;
               }
             });
-
-            // Если мы перетаскиваем рамку — нужно сдвинуть и координаты рамки относительно её стартового состояния
             if (selectionDragging.value && startSelectionRect.value) {
               const s = startSelectionRect.value;
-              selectionRect.value = {
-                x1: s.x1 + dx,
-                y1: s.y1 + dy,
-                x2: s.x2 + dx,
-                y2: s.y2 + dy,
-                active: true,
-              };
+              selectionRect.value = { x1: s.x1 + dx, y1: s.y1 + dy, x2: s.x2 + dx, y2: s.y2 + dy, active: true };
             }
-
             return val;
           });
         }
@@ -402,17 +312,13 @@ export default function GraphApp() {
       .onFinalize((e) => {
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
-
-        // Если мы рисовали рамку (и не перетаскивали её) — вычисляем попавшие ноды и фиксируем рамку
         if (selectionRect.value.active && !selectionDragging.value) {
           const selX1 = Math.min(selectionRect.value.x1, selectionRect.value.x2);
           const selY1 = Math.min(selectionRect.value.y1, selectionRect.value.y2);
           const selX2 = Math.max(selectionRect.value.x1, selectionRect.value.x2);
           const selY2 = Math.max(selectionRect.value.y1, selectionRect.value.y2);
-
           const newSelectedIds = [];
           let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-
           for (const id in nodesStore.value) {
             const n = nodesStore.value[id];
             if (n.x.value + n.width >= selX1 && n.x.value <= selX2 && n.y.value + n.height >= selY1 && n.y.value <= selY2) {
@@ -423,29 +329,20 @@ export default function GraphApp() {
               maxY = Math.max(maxY, n.y.value + n.height);
             }
           }
-
           if (newSelectedIds.length > 0) {
             selectedNodeIds.value = newSelectedIds;
             const offset = 15;
-            selectionRect.value = {
-              x1: minX - offset,
-              y1: minY - offset,
-              x2: maxX + offset,
-              y2: maxY + offset,
-              active: true,
-            };
+            selectionRect.value = { x1: minX - offset, y1: minY - offset, x2: maxX + offset, y2: maxY + offset, active: true };
           } else {
             selectionRect.value = { x1: 0, y1: 0, x2: 0, y2: 0, active: false };
             selectedNodeIds.value = [];
           }
         }
 
-        // Обработка соединений (если начинали тянуть линию)
         const hasMoved = Math.abs(e.translationX) > 5 || Math.abs(e.translationY) > 5;
         if (isConnecting.value && hasMoved && activeNodeId.value) {
           let targetId = null;
           const store = nodesStore.value || {};
-
           for (const id in store) {
             const n = store[id];
             if (adjX >= n.x.value - PORT_RADIUS && adjX <= n.x.value + n.width + PORT_RADIUS && adjY >= n.y.value - PORT_RADIUS && adjY <= n.y.value + n.height + PORT_RADIUS) {
@@ -470,21 +367,14 @@ export default function GraphApp() {
               if (targetId) break;
             }
           }
-
           if (targetId) runOnJS(mergeGraphs)(activeNodeId.value, targetId, sourcePort.value, targetPort.value, additionalPort.value);
         }
 
-        // Сбрасываем флаги активности у ноды (если была активна)
         const currentId = activeNodeId.value;
         if (currentId) {
-          nodesStore.modify(val => {
-            'worklet';
-            if (val[currentId]) val[currentId].isActive = 0;
-            return val;
-          });
+          nodesStore.modify(val => { 'worklet'; if (val[currentId]) val[currentId].isActive = 0; return val; });
         }
 
-        // Сбрасываем режим перетаскивания рамки и временные значения
         selectionDragging.value = false;
         startSelectionRect.value = null;
 
@@ -497,19 +387,16 @@ export default function GraphApp() {
     const tap = Gesture.Tap().onStart((e) => {
       const adjX = (e.x - translateX.value) / scale.value;
       const adjY = (e.y - translateY.value) / scale.value;
-
       const rect = selectionRect.value || { x1: 0, y1: 0, x2: 0, y2: 0 };
       const minX = Math.min(rect.x1, rect.x2);
       const maxX = Math.max(rect.x1, rect.x2);
       const minY = Math.min(rect.y1, rect.y2);
       const maxY = Math.max(rect.y1, rect.y2);
       const isOutside = adjX < minX || adjX > maxX || adjY < minY || adjY > maxY;
-
       if (isOutside) {
         selectionRect.value = { x1: 0, y1: 0, x2: 0, y2: 0, active: false };
         selectedNodeIds.value = [];
       }
-
       let found = null;
       const store = nodesStore.value || {};
       for (const id in store) {
@@ -523,121 +410,60 @@ export default function GraphApp() {
     });
 
     return Gesture.Race(pan, tap);
-  }, [
-    nodes,
-    nodesStore,
-    translateX,
-    translateY,
-    scale,
-    isConnecting,
-    tempLine,
-    startDragOffset,
-    startSelectionRect,
-    selectionDragging,
-    selectionRect,
-    selectedNodeIds,
-    linksSV,
-    mergeGraphs,
-    handleDisconnect,
-    setActiveMenu,
-    setActiveNodeIdJS,
-  ]);
+  }, [nodes, nodesStore, translateX, translateY, scale, isConnecting, tempLine, startDragOffset, startSelectionRect, selectionDragging, selectionRect, selectedNodeIds, linksSV, mergeGraphs, handleDisconnect]);
 
   const canvasGesture = useMemo(() => {
     const canvasPan = Gesture.Pan()
       .minPointers(2)
       .onStart(() => {
-        // Блокируем, если уже щипок или выделен узел
         if (isPinching.value || activeNodeId.value !== null) return;
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
       })
       .onUpdate((e) => {
         if (isPinching.value || activeNodeId.value !== null) return;
-        
-        // Прямое присвоение БЕЗ withSpring для плавности следования за пальцем
         translateX.value = savedTranslateX.value + e.translationX;
         translateY.value = savedTranslateY.value + e.translationY;
       });
-  
+
     const canvasPinch = Gesture.Pinch()
       .onStart((e) => {
         isPinching.value = true;
         savedScale.value = scale.value;
         savedTranslateX.value = translateX.value;
         savedTranslateY.value = translateY.value;
-        
-        // Фокус щипка
-        pinchCenter.value = {
-          x: (e.focalX - translateX.value) / scale.value,
-          y: (e.focalY - translateY.value) / scale.value
-        };
+        pinchCenter.value = { x: (e.focalX - translateX.value) / scale.value, y: (e.focalY - translateY.value) / scale.value };
       })
       .onUpdate((e) => {
         let nextScale = savedScale.value * e.scale;
-        
-        // Ограничение зума
         if (nextScale < MIN_SCALE) nextScale = MIN_SCALE;
         if (nextScale > MAX_SCALE) nextScale = MAX_SCALE;
-  
         const scaleChange = nextScale - savedScale.value;
-        
-        // Корректировка позиции, чтобы зум шел в точку между пальцами
         translateX.value = savedTranslateX.value - pinchCenter.value.x * scaleChange;
         translateY.value = savedTranslateY.value - pinchCenter.value.y * scaleChange;
         scale.value = nextScale;
       })
-      .onEnd(() => {
-        isPinching.value = false;
-      });
-  
+      .onEnd(() => { isPinching.value = false; });
+
     return Gesture.Simultaneous(canvasPan, canvasPinch);
-    
-    // Убираем лишние зависимости, оставляем только те, что реально могут измениться как ссылки
   }, [activeNodeId]);
 
   const handleMenuAction = useCallback((action) => {
-    if (action === 'delete' && activeMenu) {
-      deleteNode(activeMenu.nodeId);
-    }
+    if (action === 'delete' && activeMenu) deleteNode(activeMenu.nodeId);
     runOnJS(setActiveMenu)(null);
   }, [activeMenu, deleteNode]);
 
-  const sceneTransform = useDerivedValue(() => [
-    { translateX: translateX.value },
-    { translateY: translateY.value },
-    { scale: scale.value },
-  ]);
+  const sceneTransform = useDerivedValue(() => [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }]);
 
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), 14);
   const iconFont = useFont(require("../../../assets/fonts/MaterialCommunityIcons.ttf"), 25);
 
   const composedGesture = useMemo(() => Gesture.Simultaneous(nodeGestures, canvasGesture), [nodeGestures, canvasGesture]);
 
-  // ---------- Minimap derived values ----------
-  const vX = useDerivedValue(() => {
-    const s = scale.value || 1;
-    const w = ((screenWidth - 100) / s) * MINIMAP_RATIO;
-    const rawX = (-translateX.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
-    return clamp(rawX, 0, MINIMAP_SIZE - w);
-  });
-
-  const vY = useDerivedValue(() => {
-    const s = scale.value || 1;
-    const h = (screenHeight / s) * MINIMAP_RATIO;
-    const rawY = (-translateY.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
-    return clamp(rawY, 0, MINIMAP_SIZE - h);
-  });
-
-  const vW = useDerivedValue(() => {
-    const w = (screenWidth / (scale.value || 1)) * MINIMAP_RATIO;
-    return Math.min(w, MINIMAP_SIZE);
-  });
-
-  const vH = useDerivedValue(() => {
-    const h = (screenHeight / (scale.value || 1)) * MINIMAP_RATIO;
-    return Math.min(h, MINIMAP_SIZE);
-  });
+  const vX = useDerivedValue(() => { const s = scale.value || 1; const w = ((screenWidth - 100) / s) * MINIMAP_RATIO; const rawX = (-translateX.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2); return clamp(rawX, 0, MINIMAP_SIZE - w); });
+  const vY = useDerivedValue(() => { const s = scale.value || 1; const h = (screenHeight / s) * MINIMAP_RATIO; const rawY = (-translateY.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2); return clamp(rawY, 0, MINIMAP_SIZE - h); });
+  const vW = useDerivedValue(() => { const w = (screenWidth / (scale.value || 1)) * MINIMAP_RATIO; return Math.min(w, MINIMAP_SIZE); });
+  const vH = useDerivedValue(() => { const h = (screenHeight / (scale.value || 1)) * MINIMAP_RATIO; return Math.min(h, MINIMAP_SIZE); });
 
   const minimapGesture = useMemo(() => Gesture.Pan().onUpdate((e) => {
     const clampedX = clamp(e.x, vW.value / 2, MINIMAP_SIZE - vW.value / 2);
@@ -655,19 +481,15 @@ export default function GraphApp() {
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
-
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onAddNode={(type) => addNodeOfType(type)} />
-
-        <View style={[styles.menu, { marginLeft: sidebarOpen ? 240 : 0 }]}>
+        <View style={[styles.menu, { marginLeft: sidebarOpen ? 240 : 0 }]}> 
           <TouchableOpacity style={styles.menuBtn} onPress={() => setSidebarOpen(v => !v)}>
             <Text style={styles.menuText}>{sidebarOpen ? 'Hide Library' : 'Show Library'}</Text>
           </TouchableOpacity>
         </View>
-
         <GestureDetector gesture={composedGesture}>
           <Canvas style={styles.canvas}>
             <Group transform={sceneTransform}>
-
               {links.map(l => (
                 <RenderLink key={l.id} fromId={l.from} toId={l.to} portFrom={l.portFrom} portTo={l.portTo} additionalPort={l.additionalPort} store={nodesStore} />
               ))}
@@ -700,13 +522,7 @@ export default function GraphApp() {
         </GestureDetector>
 
         {activeMenu && (
-          <NodeMenuOverlay
-            visible={!!activeMenu}
-            x={activeMenu.x}
-            y={activeMenu.y}
-            width={activeMenu.width}
-            onAction={handleMenuAction}
-          />
+          <NodeMenuOverlay visible={!!activeMenu} x={activeMenu.x} y={activeMenu.y} width={activeMenu.width} onAction={handleMenuAction} />
         )}
 
       </View>
