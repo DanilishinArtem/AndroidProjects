@@ -158,22 +158,37 @@ export const RenderTempLine = ({ tempLine, isConnecting }) => {
 };
 
 export const MinimapNode = ({ id, store, OFF }) => {
-    const x = useDerivedValue(() => {
-      const n = store.value[id];
-      return n ? n.x : OFF;
-    });
-    const y = useDerivedValue(() => {
-      const n = store.value[id];
-      return n ? n.y : OFF;
-    });
+  const nodeData = store.value[id];
+  if (!nodeData) return null;
+  const transform = useDerivedValue(() => {
+    const node = store.value[id];
+    if (!node) return [{ translateX: OFF }, { translateY: OFF }];
+    
+
+    return [
+      { translateX: node.x.value },
+      { translateY: node.y.value },
+    ];
+  });
+
+  // const x = useDerivedValue(() => {
+  //     const n = store.value[id];
+  //     return n ? n.x : OFF;
+  //   });
+  //   const y = useDerivedValue(() => {
+  //     const n = store.value[id];
+  //     return n ? n.y : OFF;
+  //   });
     return (
-      <Rect 
-      x={x} 
-      y={y} 
-      width={100} 
-      height={100} 
-      color="#858585c5"
-      />
+      <Group transform={transform}>
+        <Rect 
+        x={nodeData.x.value}
+        y={nodeData.y.value}
+        width={nodeData.width}
+        height={nodeData.height}
+        color="white"
+        />
+      </Group>
     );
 };
 

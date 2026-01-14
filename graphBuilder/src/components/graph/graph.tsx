@@ -1,10 +1,10 @@
 import React, { useState, useMemo, useCallback, useEffect } from 'react';
 import { View, TouchableOpacity, Text, useWindowDimensions, NativeModules } from 'react-native';
-import { Canvas, Group, useFont } from '@shopify/react-native-skia';
+import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
 import { useSharedValue, makeMutable, clamp, withSpring, useDerivedValue } from 'react-native-reanimated';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, RenderTempLine, RenderLink, styles } from './RenderFunctions';
+import { MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, MinimapNode, RenderTempLine, RenderLink, styles } from './RenderFunctions';
 import { nodeFactory, NodeRenderer } from '../nodes/nodeFactory';
 import { Sidebar } from '../interface/sidebar';
 import { SelectionRect } from '../interface/areaSelection';
@@ -543,7 +543,6 @@ export default function GraphApp() {
     setActiveNodeIdJS,
   ]);
 
-  // Canvas gestures (pan + pinch)
   const canvasGesture = useMemo(() => {
     const canvasPan = Gesture.Pan()
       .minPointers(2)
@@ -607,6 +606,44 @@ export default function GraphApp() {
 
   const composedGesture = useMemo(() => Gesture.Simultaneous(nodeGestures, canvasGesture), [nodeGestures, canvasGesture]);
 
+  // ---------- Minimap derived values ----------
+  const vX = useDerivedValue(() => {
+    const s = scale.value || 1;
+    const w = ((screenWidth - 100) / s) * MINIMAP_RATIO;
+    const rawX = (-translateX.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
+    return clamp(rawX, 0, MINIMAP_SIZE - w);
+  });
+
+  const vY = useDerivedValue(() => {
+    const s = scale.value || 1;
+    const h = (screenHeight / s) * MINIMAP_RATIO;
+    const rawY = (-translateY.value / s) * MINIMAP_RATIO + (MINIMAP_SIZE / 2);
+    return clamp(rawY, 0, MINIMAP_SIZE - h);
+  });
+
+  const vW = useDerivedValue(() => {
+    const w = (screenWidth / (scale.value || 1)) * MINIMAP_RATIO;
+    return Math.min(w, MINIMAP_SIZE);
+  });
+
+  const vH = useDerivedValue(() => {
+    const h = (screenHeight / (scale.value || 1)) * MINIMAP_RATIO;
+    return Math.min(h, MINIMAP_SIZE);
+  });
+
+  const minimapGesture = useMemo(() => Gesture.Pan().onUpdate((e) => {
+    const clampedX = clamp(e.x, vW.value / 2, MINIMAP_SIZE - vW.value / 2);
+    const clampedY = clamp(e.y, vH.value / 2, MINIMAP_SIZE - vH.value / 2);
+    const targetWorldX = (clampedX / MINIMAP_RATIO) - (WORLD_SIZE / 2);
+    const targetWorldY = (clampedY / MINIMAP_RATIO) - (WORLD_SIZE / 2);
+    const nextX = -targetWorldX * scale.value + (screenWidth / 2);
+    const nextY = -targetWorldY * scale.value + (screenHeight / 2);
+    translateX.value = withSpring(nextX);
+    translateY.value = withSpring(nextY);
+  }), [vW, vH, scale, translateX, translateY, screenWidth, screenHeight]);
+
+  const minimapContentTransform = [{ scale: MINIMAP_RATIO }, { translateX: WORLD_SIZE / 2 }, { translateY: WORLD_SIZE / 2 }];
+
   return (
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
@@ -641,6 +678,17 @@ export default function GraphApp() {
 
             </Group>
           </Canvas>
+        </GestureDetector>
+
+        <GestureDetector gesture={minimapGesture}>
+          <View style={styles.minimapContainer}>
+            <Canvas style={{ width: MINIMAP_SIZE, height: MINIMAP_SIZE }}>
+              <Group transform={minimapContentTransform}>
+                {nodes.map(n => <MinimapNode key={n.id} id={n.id} store={nodesStore} OFF={-10000} />)}
+              </Group>
+              <Rect x={vX} y={vY} width={vW} height={vH} color="green" style="stroke" strokeWidth={2} />
+            </Canvas>
+          </View>
         </GestureDetector>
 
         {activeMenu && (
