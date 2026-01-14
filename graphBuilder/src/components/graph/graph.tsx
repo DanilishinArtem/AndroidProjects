@@ -2,7 +2,7 @@ import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react'
 import { View, TouchableOpacity, Text, useWindowDimensions, NativeModules } from 'react-native';
 import { Canvas, Group, useFont, Rect } from '@shopify/react-native-skia';
 import { Gesture, GestureDetector, GestureHandlerRootView } from 'react-native-gesture-handler';
-import { useSharedValue, makeMutable, clamp, withSpring, useDerivedValue } from 'react-native-reanimated';
+import { useSharedValue, makeMutable, clamp, withSpring, useDerivedValue, useFrameCallback } from 'react-native-reanimated';
 import { MIN_SCALE, MAX_SCALE, NODE_SIZE, MINIMAP_SIZE, WORLD_SIZE, MinimapNode, RenderTempLine, RenderLink, styles } from './RenderFunctions';
 import { nodeFactory, NodeRenderer } from '../nodes/nodeFactory';
 import { Sidebar } from '../interface/sidebar';
@@ -14,12 +14,15 @@ import { runOnJS } from 'react-native-worklets';
 const { GraphEngine } = NativeModules;
 
 export default function GraphApp() {
+  const EDGE_MARGIN = 40;
+  const AUTO_PAN_SPEED = 6;
+
+
   const MINIMAP_RATIO = MINIMAP_SIZE / WORLD_SIZE;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
 
   const [nodes, setNodes] = useState([]);
   const [links, setLinks] = useState([]);
-  const [menuVisible, setMenuVisible] = useState(false);
   const [activeMenu, setActiveMenu] = useState(null);
   const [activeNodeIdJS, setActiveNodeIdJS] = useState(null);
   const [sidebarOpen, setSidebarOpen] = useState(false);
@@ -47,10 +50,61 @@ export default function GraphApp() {
   const selectionRect = useSharedValue({ x1: 0, y1: 0, x2: 0, y2: 0, active: false });
   const startSelectionRect = useSharedValue(null);
   const selectionDragging = useSharedValue(false);
+  const autoPanDir = useSharedValue({ x: 0, y: 0 });
+  const autoPanAccum = useSharedValue({ x: 0, y: 0 });
+  const isAutoPanning = useSharedValue(false);
 
   useEffect(() => {
     linksSV.value = links;
   }, [links]);
+
+  const clampTranslateFromMinimap = (tx, ty) => {
+    'worklet';
+    const s = scale.value || 1;
+    const R = MINIMAP_RATIO;
+    const C = MINIMAP_SIZE / 2;
+
+    const vw = Math.min((screenWidth / s) * R, MINIMAP_SIZE);
+    const vh = Math.min((screenHeight / s) * R, MINIMAP_SIZE);
+
+    const minTX = -((MINIMAP_SIZE - vw - C) / R) * s;
+    const maxTX = -((0 - C) / R) * s;
+
+    const minTY = -((MINIMAP_SIZE - vh - C) / R) * s;
+    const maxTY = -((0 - C) / R) * s;
+
+    return {
+      x: Math.min(Math.max(tx, minTX), maxTX),
+      y: Math.min(Math.max(ty, minTY), maxTY),
+    };
+  };
+
+  useFrameCallback(() => {
+    if (!isAutoPanning.value || !activeNodeId.value) return;
+
+    const dx = autoPanDir.value.x;
+    const dy = autoPanDir.value.y;
+
+    if (dx === 0 && dy === 0) return;
+
+    const nextX = translateX.value + dx;
+    const nextY = translateY.value + dy;
+
+    const clamped = clampTranslateFromMinimap(nextX, nextY);
+
+    const realDX = clamped.x - translateX.value;
+    const realDY = clamped.y - translateY.value;
+
+    translateX.value = clamped.x;
+    translateY.value = clamped.y;
+
+    autoPanAccum.value = {
+      x: autoPanAccum.value.x + realDX,
+      y: autoPanAccum.value.y + realDY,
+    };
+    if (realDX === 0) autoPanDir.value.x = 0;
+    if (realDY === 0) autoPanDir.value.y = 0;
+  });
 
   const idCounterRef = useRef(0);
   const makeLinkId = useCallback((from, to, portFrom, portTo, addPort) => {
@@ -160,7 +214,6 @@ export default function GraphApp() {
       });
       return updatedLinks;
     });
-    setMenuVisible(false);
   }, [recalculateGraphIds, nodesStore]);
 
   const handleDisconnect = useCallback((targetNodeId, portIndex, portType, currentX, currentY) => {
@@ -187,6 +240,7 @@ export default function GraphApp() {
     const pan = Gesture.Pan()
       .maxPointers(1)
       .onBegin((e) => {
+        autoPanAccum.value = { x: 0, y: 0 };
         isConnecting.value = false;
         const adjX = (e.x - translateX.value) / scale.value;
         const adjY = (e.y - translateY.value) / scale.value;
@@ -291,8 +345,17 @@ export default function GraphApp() {
           return;
         }
         if (activeNodeId.value) {
-          const dx = e.translationX / scale.value;
-          const dy = e.translationY / scale.value;
+          let panX = 0;
+          let panY = 0;
+          if(e.x < EDGE_MARGIN) panX = AUTO_PAN_SPEED;
+          else if(e.x > screenWidth - EDGE_MARGIN) panX = -AUTO_PAN_SPEED;
+          if(e.y < EDGE_MARGIN) panY = AUTO_PAN_SPEED;
+          else if(e.y > screenHeight - EDGE_MARGIN - 50) panY = -AUTO_PAN_SPEED;
+          autoPanDir.value = { x: panX, y: panY };
+          isAutoPanning.value = panX !== 0 || panY !== 0;
+
+          const dx = (e.translationX - autoPanAccum.value.x) / scale.value;
+          const dy = (e.translationY - autoPanAccum.value.y) / scale.value;
           nodesStore.modify(val => {
             'worklet';
             selectedNodeIds.value.forEach(id => {
@@ -378,6 +441,9 @@ export default function GraphApp() {
 
         selectionDragging.value = false;
         startSelectionRect.value = null;
+        autoPanDir.value = { x: 0, y: 0 };
+        isAutoPanning.value = false;
+        autoPanAccum.value = { x: 0, y: 0 };
 
         activeNodeId.value = null;
         isConnecting.value = false;

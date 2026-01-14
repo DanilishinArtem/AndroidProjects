@@ -7,7 +7,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import Icon from 'react-native-vector-icons/MaterialCommunityIcons';
 
-// 1. Выносим конфиг иконок наружу
 const MENU_ICONS = [
   { name: 'play', action: 'execute' },
   { name: 'power', action: 'deactivate' },
@@ -26,7 +25,6 @@ export const NodeMenuOverlay: React.FC<MenuOverlayProps> = ({ visible, x, y, wid
     };
   });
 
-  // 3. Важно: используем pointerEvents вместо return null
   return (
     <Animated.View 
       pointerEvents={visible ? 'auto' : 'none'}
@@ -54,12 +52,12 @@ const styles = StyleSheet.create({
   menuContainer: {
     position: 'absolute',
     flexDirection: 'column',
-    backgroundColor: '#1E1E1E', // Темный фон
+    backgroundColor: '#1E1E1E',
     borderRadius: 25,
     padding: 6,
     gap: 8,
-    elevation: 8, // Тень для Android
-    shadowColor: '#000', // Тень для iOS
+    elevation: 8,
+    shadowColor: '#000',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
