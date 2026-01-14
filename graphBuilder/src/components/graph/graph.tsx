@@ -185,6 +185,7 @@ export default function GraphApp() {
 
   const nodeGestures = useMemo(() => {
     const pan = Gesture.Pan()
+      .maxPointers(1)
       .onBegin((e) => {
         isConnecting.value = false;
         const adjX = (e.x - translateX.value) / scale.value;
