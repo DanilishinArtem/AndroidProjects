@@ -249,7 +249,7 @@ export default function GraphApp() {
         }
 
         // 2) если ноду не нашли, но рамка активна, проверяем попадание внутрь рамки — в этом случае запускаем перетаскивание группы
-        if (!hitId && selectionRect.value.active) {
+        if (!hitId || selectionRect.value.active) {
           const s = selectionRect.value;
           const minX = Math.min(s.x1, s.x2);
           const maxX = Math.max(s.x1, s.x2);
