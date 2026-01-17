@@ -10,18 +10,6 @@ import {
 import { useDerivedValue } from 'react-native-reanimated';
 import { StyleSheet } from 'react-native';
 import {MINIMAP_SIZE, LINK_COLOR, LINK_WIDTH, MARGIN, ARROW_SIZE} from './constants';
-// export const NODE_SIZE = 80;
-// export const MINIMAP_SIZE = 150;
-// export const WORLD_SIZE = 5000;
-// export const MIN_SCALE = 0.25;
-// export const MAX_SCALE = 2.0;
-
-// const LINK_COLOR = '#6e6e6e';
-// const LINK_WIDTH = 2.2;
-// const MARGIN = 30;
-// const ARROW_SIZE = 20;
-
-const emptyPath = () => Skia.Path.Make();
 
 const getPortPosition = (node, port, type) => {
   'worklet';
@@ -56,13 +44,15 @@ const addArrowHead = (path, fromX, fromY, toX, toY) => {
 };
 
 export const RenderLink = memo(({ fromId, toId, portFrom, portTo, additionalPort, store }) => {
+  const nodeFrom = store.value[fromId];
+  const nodeTo = store.value[toId];
   const path = useDerivedValue(() => {
     const from = store.value[fromId];
     const to = store.value[toId];
-    if (!from || !to) return emptyPath();
+    if (!from || !to) return Skia.Path.Make();
 
     const out = from.outputPorts?.[portFrom];
-    if (!out) return emptyPath();
+    if (!out) return Skia.Path.Make();
 
     const start = {
       x: from.x.value + out.x,
@@ -71,7 +61,7 @@ export const RenderLink = memo(({ fromId, toId, portFrom, portTo, additionalPort
 
     const isAdditional = additionalPort === 1;
     const end = getPortPosition(to, portTo, isAdditional ? 'additional' : 'input');
-    if (!end) return emptyPath();
+    if (!end) return Skia.Path.Make();
 
     const p = Skia.Path.Make();
     p.moveTo(start.x, start.y);
