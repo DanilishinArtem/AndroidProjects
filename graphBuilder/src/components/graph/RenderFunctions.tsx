@@ -44,8 +44,6 @@ const addArrowHead = (path, fromX, fromY, toX, toY) => {
 };
 
 export const RenderLink = memo(({ fromId, toId, portFrom, portTo, additionalPort, store }) => {
-  const nodeFrom = store.value[fromId];
-  const nodeTo = store.value[toId];
   const path = useDerivedValue(() => {
     const from = store.value[fromId];
     const to = store.value[toId];

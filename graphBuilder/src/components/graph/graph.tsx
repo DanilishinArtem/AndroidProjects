@@ -14,6 +14,8 @@ import {MINIMAP_SIZE, WORLD_SIZE, MIN_SCALE, MAX_SCALE, EDGE_MARGIN, EPSILON_POR
 
 const { GraphEngine } = NativeModules;
 
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
 export default function GraphApp() {
   const MINIMAP_RATIO = MINIMAP_SIZE / WORLD_SIZE;
   const { width: screenWidth, height: screenHeight } = useWindowDimensions();
@@ -516,6 +518,38 @@ export default function GraphApp() {
     runOnJS(setActiveMenu)(null);
   }, [activeMenu, deleteNode]);
 
+  const saveGraph = useCallback(async () => {
+    try {
+      const dataToSave = { nodes, links, coords: nodesStore.value };
+      await AsyncStorage.setItem('@my_graph_data', JSON.stringify(dataToSave));
+      alert('Graph is saved!');
+    } catch (e) {
+      console.error('Error saving graph', e);
+    }
+  }, [nodes, links, nodesStore]);
+
+  const loadGraph = useCallback(async () => {
+    try {
+      const jsonValue = await AsyncStorage.getItem('@my_graph_data');
+      if (!jsonValue) return;
+      const savedData = JSON.parse(jsonValue);
+
+      nodesStore.modify((val) => {
+        'worklet';
+        // clear and rewrite
+        for (const k in val) delete val[k];
+        Object.assign(val, savedData.coords);
+        return val;
+      });
+
+      setNodes(savedData.nodes);
+      setLinks(savedData.links);
+      alert('Graph is loaded!');
+    } catch (e) {
+      console.error('Error loading graph', e);
+    }
+  }, [nodesStore]);
+
   const sceneTransform = useDerivedValue(() => [{ translateX: translateX.value }, { translateY: translateY.value }, { scale: scale.value }]);
 
   const font = useFont(require('../../../assets/fonts/Roboto_Condensed-BlackItalic.ttf'), FONT_SIZE);
@@ -546,6 +580,12 @@ export default function GraphApp() {
       <View style={styles.container}>
         <Sidebar open={sidebarOpen} onClose={() => setSidebarOpen(false)} onAddNode={(type) => addNodeOfType(type)} />
         <View style={[styles.menu, { marginLeft: sidebarOpen ? 240 : 0 }]}> 
+          <TouchableOpacity style={styles.menuBtn} onPress={saveGraph}>
+            <Text style={styles.menuText}>SAVE</Text>
+          </TouchableOpacity>
+          <TouchableOpacity style={styles.menuBtn} onPress={loadGraph}>
+            <Text style={styles.menuText}>LOAD</Text>
+          </TouchableOpacity>
           <TouchableOpacity style={styles.menuBtn} onPress={() => setSidebarOpen(v => !v)}>
             <Text style={styles.menuText}>{sidebarOpen ? 'Hide Library' : 'Show Library'}</Text>
           </TouchableOpacity>
